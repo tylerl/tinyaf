@@ -1,13 +1,20 @@
 import cgi
+import functools
+import mimetypes
+import os
 import re
 import sys
 import traceback
 import types
 import wsgiref.headers
 
-_STATUS_MSGS = {200: 'OK', 303: 'See Other', 404: 'Not Found', 500: 'Error'}
-UNICODE = getattr(__builtins__, 'unicode', str)  # python 2/3
-FILETYPE = type(sys.stdin)
+STATUS_MSGS = {200: 'OK', 303: 'See Other', 404: 'Not Found', 500: 'Error'}
+
+
+def _yield_all_then(it, then, *args, **kwargs):
+  for x in it:
+    yield x
+  then(*args, **kwargs)
 
 
 class Request(object):
@@ -18,14 +25,11 @@ class Request(object):
     self.path = environ['PATH_INFO']
     self.args = []
     self.method = environ['REQUEST_METHOD']
-    # preserve cgi-style fieldstorage in case you need it
     self.fieldstorage = cgi.FieldStorage(
         environ=environ, fp=environ.get('wsgi.input', None))
-    # but coelesce down to a dict for typical use
     self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
-    self.headers = wsgiref.headers.Headers([(k[5:], v)
-                                            for k, v in environ.items()
-                                            if k.startswith("HTTP_")])
+    hl = [(k[5:], v) for k, v in environ.items() if k.startswith("HTTP_")]
+    self.headers = wsgiref.headers.Headers(hl)
 
 
 class Response(object):
@@ -43,7 +47,31 @@ class Response(object):
     else:
       self.headers = wsgiref.headers.Headers(list())
     self.content = [] if content is None else content
-    self.status = status
+    self.status = status or STATUS_MSGS.get(code, 'Code %i' % (code))
+
+  def write(self, content):
+    self.content.append(content)
+
+
+class FileResponse(Response):
+
+  def __init__(self, file, mimetype=None, headers=None, status=None):
+    Response.__init__(self, 200, headers, None, status)
+    if mimetype:
+      self.headers['content-type'] = mimetype
+    if hasattr(file, 'read'):
+      self.binary = not getattr(file, 'encoding', None)
+    else:
+      file = open(file, "rb")
+      self.binary = True
+    if not self.headers['content-type'] and hasattr(file, 'name'):
+      mt = mimetypes.guess_type(file.name)[0]
+      if mt:
+        self.headers['content-type'] = mt
+    if not self.headers['content-length'] and hasattr(file, 'fileno'):
+      self.headers['content-length'] = "%i" % (os.fstat(file.fileno()).st_size)
+    self.content = _yield_all_then(
+        iter(functools.partial(file.read, 8192), ""), file.close)
 
 
 class HttpError(Exception, Response):
@@ -83,18 +111,19 @@ class App(object):
     """WSGI entrypoint. Handles WSGI pecularity."""
     request = Request(environ)
     response = self._process_request(request)
-    status = response.status or _STATUS_MSGS.get(response.code, 'Unknown')
-    if (isinstance(response.status, list) or
-        isinstance(response.status, tuple) or
-        isinstance(response.status, types.GeneratorType)):
+    if (isinstance(response.content, list) or
+        isinstance(response.content, tuple) or
+        isinstance(response.content, types.GeneratorType)):
       content = response.content
     else:
       content = [response.content]
-    if not response.binary:
+    if not response.binary:  # auto-encode unicode
       content = (
-          s.encode("utf-8") for s in content if isinstance(s, UNICODE))
-    start_response("%i %s" % (response.code, status),
-                   list(response.headers.items()))
+          s.encode("utf-8") if isinstance(s, type(u'')) else s for s in content)
+    start_response(
+        "%i %s" % (response.code or 500, response.status or "Unknown Status"),
+        list(response.headers.items()))
+    print (list(response.headers.items()))
     return content
 
   def _get_response(self, fn, request, response):
@@ -171,6 +200,8 @@ class App(object):
 
 app = App()
 
+import os
+
 
 @app.route(r'/$')
 def home(req, resp):
@@ -178,27 +209,19 @@ def home(req, resp):
   return "<html><h1>Hello World</h1>"
 
 
-@app.route(r'/static/([^/.][^/]*)$')
-def static(req, resp):
-  import os
-  import mimetypes
-  filename = os.path.join(os.path.dirname(__file__), req.args[0])
-  if not os.path.exists(filename):
+@app.route(r'/files/$')
+def dirlist(req, resp):
+  resp.headers['content-type'] = 'text/html'
+  for f in os.listdir():
+    if os.path.isfile(f):
+      resp.write("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
+
+
+@app.route(r'/files/([^/.][^/]*)$')
+def files(req, resp):
+  if not os.path.exists(req.args[0]):
     raise HttpError(404)
-  mime, _ = mimetypes.guess_type(filename)
-  if mime:
-    resp.headers['content-type'] = mime
-  f = open(filename)  # Open file before returning for error handling.
-
-  def out(f):  # generator: defer fileio for memory reasons, ensure close at end
-    while True:  # py3 simplifies: yield from iter(lambda: f.read(1024), '')
-      buf = f.read(1024)
-      if not buf:
-        break
-      yield buf
-    f.close()
-
-  return out(f)  # return generator which outputs file contents
+  return FileResponse(req.args[0])
 
 
 def main():
