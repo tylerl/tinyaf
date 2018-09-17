@@ -36,50 +36,73 @@ class Response(object):
   """Response contains the status, headers, and content of an HTTP response.
   You return a Response object in your request handler. """
 
-  def __init__(self, code=200, headers=None, content=None, status=None):
+  def __init__(self, content=[], code=200, headers=None, **kwargs):
+    self._default_headers = {}
+    self.content = content
     self.code = code
-    self.binary = False
-    if headers:
-      if hasattr(headers, 'items'):
-        self.headers = wsgiref.headers.Headers(list(headers.items()))
-      else:
-        self.headers = wsgiref.headers.Headers(list(headers))
-    else:
-      self.headers = wsgiref.headers.Headers(list())
-    self.content = [] if content is None else content
-    self.status = status or STATUS_MSGS.get(code, 'Code %i' % (code))
+    self.status = kwargs.get('status', None) or STATUS_MSGS.get(code, 'Code %i' % (code))
+    headers = headers or []
+    self.headers = wsgiref.headers.Headers(getattr(headers, 'items', lambda:headers)())
 
-  def write(self, content):
+  def towsgi(self, start_response):
+    content = self.finalize() or self.content or []
+    code = self.code or 500
+    status = self.status or STATUS_MSGS.get(code, 'Code %i' % (code))
+    for h, v in self._default_headers.items():
+      self.headers.setdefault(h, str(v))
+    start_response("%i %s" % (code, status), list(self.headers.items()))
+    return content
+
+  def finalize(self):
+    pass
+
+
+class StringResponse(Response):
+  def __init__(self, content=u"", charset='utf-8', content_type='text/html', **kwargs):
+    Response.__init__(self, content=[content], **kwargs)
+    self.content_type=content_type
+    self.charset=charset
+
+  def append(self, content):
     self.content.append(content)
 
+  def finalize(self):
+    if self.content_type:
+      self._default_headers['content-type'] = "%s;charset=%s" % (self.content_type, self.charset)
+    out = "".join(self.content).encode(self.charset)
+    self._default_headers['content-length'] = len(out)
+    return (out,)
 
 class FileResponse(Response):
 
-  def __init__(self, file, mimetype=None, headers=None, status=None):
-    Response.__init__(self, 200, headers, None, status)
-    if mimetype:
-      self.headers['content-type'] = mimetype
-    if hasattr(file, 'read'):
-      self.binary = not getattr(file, 'encoding', None)
-    else:
+  def __init__(self, file, content_type=None, close=True, **kwargs):
+    Response.__init__(self, **kwargs)
+    self.close = close
+    if not hasattr(file, 'read'):
       file = open(file, "rb")
-      self.binary = True
-    if not self.headers['content-type'] and hasattr(file, 'name'):
-      mt = mimetypes.guess_type(file.name)[0]
-      if mt:
-        self.headers['content-type'] = mt
-    if not self.headers['content-length'] and hasattr(file, 'fileno'):
-      self.headers['content-length'] = "%i" % (os.fstat(file.fileno()).st_size)
-    self.content = _yield_all_then(
-        iter(functools.partial(file.read, 8192), ""), file.close)
+    if not content_type and hasattr(file, 'name'):
+      content_type = mimetypes.guess_type(file.name)[0]
+    if content_type:
+      self._default_headers['content-type'] = content_type
+    if hasattr(file, 'fileno'):
+      self._default_headers['content-length'] = "%i" % (os.fstat(file.fileno()).st_size)
+    self.file = file
+    self.content = self.readandclose()
 
+  def readandclose(self):
+    while True:
+      dat = self.file.read(8192)
+      if not dat: break
+      yield dat
+    if self.close:
+      self.file.close()
 
-class HttpError(Exception, Response):
+class HttpError(Exception, StringResponse):
   """HttpError triggers your handle_STATUS handler if one is set."""
 
-  def __init__(self, code=500, headers=None, content=None, status=None):
+  def __init__(self, code=500, content="", **kwargs):
     Exception.__init__(self, "HTTP %i" % (code))
-    Response.__init__(self, code, headers, content, status)
+    StringResponse.__init__(self, content, code=code, **kwargs)
 
 
 class App(object):
@@ -111,20 +134,9 @@ class App(object):
     """WSGI entrypoint. Handles WSGI pecularity."""
     request = Request(environ)
     response = self._process_request(request)
-    if (isinstance(response.content, list) or
-        isinstance(response.content, tuple) or
-        isinstance(response.content, types.GeneratorType)):
-      content = response.content
-    else:
-      content = [response.content]
-    if not response.binary:  # auto-encode unicode
-      content = (
-          s.encode("utf-8") if isinstance(s, type(u'')) else s for s in content)
-    start_response(
-        "%i %s" % (response.code or 500, response.status or "Unknown Status"),
-        list(response.headers.items()))
-    print (list(response.headers.items()))
-    return content
+    return response.towsgi(start_response)
+
+
 
   def _get_response(self, fn, request, response):
     """Sort out the response/result ambiguity, and return the response."""
@@ -151,7 +163,7 @@ class App(object):
 
   def _process_request(self, request):
     """Call the base request handler and get a response."""
-    return self._get_response_handled(self.request_handler, request, Response())
+    return self._get_response_handled(self.request_handler, request, StringResponse())
 
   def request_handler(self, request, response):
     """Top-level request handler. Override to intercept every request."""
@@ -205,16 +217,28 @@ import os
 
 @app.route(r'/$')
 def home(req, resp):
-  resp.headers['content-type'] = 'text/html'
-  return "<html><h1>Hello World</h1>"
+  return "<html><h1>Hello World</h1></html>"
+
+@app.route(r'/sleep/(\d+)$')
+def sleepy_dave(req, resp):
+  #TODO: debug fact that this doesn't dump stacktrace to output
+  import time
+  time.sleep(int(req.args[0]))
+  return "Slept"
+
+@app.route(r'/crash$')
+def crashy(req, resp):
+  #TODO: debug fact that this doesn't dump stacktrace to output
+  raise Exception("BOOM")
+  return "boomed"
+
 
 
 @app.route(r'/files/$')
 def dirlist(req, resp):
-  resp.headers['content-type'] = 'text/html'
   for f in os.listdir():
     if os.path.isfile(f):
-      resp.write("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
+      resp.append("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
 
 
 @app.route(r'/files/([^/.][^/]*)$')
@@ -245,6 +269,18 @@ def main():
   except KeyboardInterrupt:
     pass
 
-
 if __name__ == '__main__':
   main()
+
+###################################################
+# SCRATCH
+#################
+# if (isinstance(response.content, list) or
+#     isinstance(response.content, tuple) or
+#     isinstance(response.content, types.GeneratorType)):
+#   content = response.content
+# else:
+#   content = [response.content]
+# if not response.binary:  # auto-encode unicode
+#   content = (
+#       s.encode("utf-8") if isinstance(s, type(u'')) else s for s in content)
