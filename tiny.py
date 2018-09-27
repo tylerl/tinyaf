@@ -1,5 +1,6 @@
 import cgi
 import functools
+import fnmatch
 import mimetypes
 import os
 import re
@@ -10,17 +11,18 @@ import wsgiref.headers
 
 STATUS_MSGS = {200: 'OK', 303: 'See Other', 404: 'Not Found', 500: 'Error'}
 
-
 class Router(object):
   def __init__(self):
     self.errorhandlers = {}
     self.routes = []
 
-  def route(self, path_regex, *methods):
-    """Decorator which gives you a handler for a given path regex."""
+  def route(self, path, *methods):
+    """Decorator which gives you a handler for a given path."""
 
     def decorator(fn):
-      self.routes.append((path_regex, fn, methods))
+      if not path.startswith("^"):
+        path = fnmatch.translate(path)
+      self.routes.append((path, fn, methods))
       return fn
 
     return decorator
@@ -34,9 +36,11 @@ class Router(object):
 
     return decorator
 
-  def mount(self, path_regex, router):
-    self.routes.append((path_regex, router, []))
-
+  def mount(self, path, router):
+    if not path.startswith("^"): path = re.escape(path)
+    self.routes.append((path, router, []))  # TODO: Just added re.escape; now and fnmatch
+                                            # above; now make the lookup do only regex
+                                            # and handle mounted prefixes (no regex)
 
 class Request(object):
   """Request encapsulates the HTTP request info sent to your handler."""
@@ -45,6 +49,7 @@ class Request(object):
     self.environ = environ
     self.path = environ['PATH_INFO']
     self.args = []
+    self.kwargs = {}
     self.method = environ['REQUEST_METHOD']
     self.fieldstorage = cgi.FieldStorage(
         environ=environ, fp=environ.get('wsgi.input', None))
@@ -151,15 +156,31 @@ class App(Router):
 
   def request_handler(self, request, response):
     """Top-level request handler. Override to intercept every request."""
+    fn, pattern = self._lookup_route(request)
+    if isinstance(fn, Router):
+
+    return fn(request, response)
+
+  def _lookup_route(self, request):
+    """Top-level request handler. Override to intercept every request."""
     methods_allowed = []
     for pattern, fn, methods in self.router.routes:
-      match = re.match(pattern, request.path)
+      if pattern.startswith("^"):
+        match = re.match(pattern, request.path)
+      else:
+        pattern.endswith("*"):
+        match = request.path == pattern
       if match:
         if methods and request.method not in methods:
           methods_allowed.extend(methods)
           continue
-        request.args = match.groups()
-        return fn(request, response)
+        if hasattr(match, 'groups'):
+          request.kwargs.update(match.groupdict())
+          request.args.extend(match.groups())
+          matched = match.group(0)
+        else:
+          matched =
+        return fn, pattern
     if methods_allowed:
       raise HttpError(
           405,
