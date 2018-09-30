@@ -11,6 +11,7 @@ import wsgiref.headers
 
 STATUS_MSGS = {200: 'OK', 303: 'See Other', 404: 'Not Found', 500: 'Error'}
 
+
 class Router(object):
   def __init__(self):
     self.errorhandlers = {}
@@ -20,11 +21,9 @@ class Router(object):
     """Decorator which gives you a handler for a given path."""
 
     def decorator(fn):
-      if not path.startswith("^"):
-        path = fnmatch.translate(path)
-      self.routes.append((path, fn, methods))
+      self.routes.append((path if path.startswith("^") else
+                          fnmatch.translate(path), fn, methods))
       return fn
-
     return decorator
 
   def errorhandler(self, code):
@@ -33,14 +32,13 @@ class Router(object):
     def decorator(fn):
       self.errorhandlers[code] = fn
       return fn
-
     return decorator
 
   def mount(self, path, router):
-    if not path.startswith("^"): path = re.escape(path)
-    self.routes.append((path, router, []))  # TODO: Just added re.escape; now and fnmatch
-                                            # above; now make the lookup do only regex
-                                            # and handle mounted prefixes (no regex)
+    if not path.startswith("^"):
+      path = re.escape(path)
+    self.routes.append((path, router, []))
+
 
 class Request(object):
   """Request encapsulates the HTTP request info sent to your handler."""
@@ -53,7 +51,10 @@ class Request(object):
     self.method = environ['REQUEST_METHOD']
     self.fieldstorage = cgi.FieldStorage(
         environ=environ, fp=environ.get('wsgi.input', None))
-    self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
+    try:
+      self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
+    except TypeError:
+      self.fields = {}
     hl = [(k[5:], v) for k, v in environ.items() if k.startswith("HTTP_")]
     self.headers = wsgiref.headers.Headers(hl)
 
@@ -69,8 +70,8 @@ class Response(object):
     self.status = kwargs.get('status', None) or STATUS_MSGS.get(
         code, 'Code %i' % (code))
     headers = headers or []
-    self.headers = wsgiref.headers.Headers(
-        getattr(headers, 'items', lambda: headers)())
+    self.headers = wsgiref.headers.Headers(list(
+        getattr(headers, 'items', lambda: headers)()))
 
   def towsgi(self, start_response):
     content = self.finalize() or self.content or []
@@ -102,7 +103,7 @@ class StringResponse(Response):
     if self.content_type:
       self._default_headers[
           'content-type'] = "%s;charset=%s" % (self.content_type, self.charset)
-    out = "".join(self.content).encode(self.charset)
+    out = ''.join(self.content).encode(self.charset)
     self._default_headers['content-length'] = len(out)
     return (out,)
 
@@ -156,31 +157,32 @@ class App(Router):
 
   def request_handler(self, request, response):
     """Top-level request handler. Override to intercept every request."""
-    fn, pattern = self._lookup_route(request)
-    if isinstance(fn, Router):
+    url = request.path
+    router = self.router
+    for _ in range(100):  # TTL sanity check
+      fn, matched, args, kwargs = self._lookup_route(url, request.method,
+                                                     router)
+      if not isinstance(fn, Router):
+        request.args.extend(args)
+        request.kwargs.update(kwargs)
+        return fn(request, response)
+      request.kwargs.update(kwargs)
+      url = "/" + url[len(matched):].lstrip("/")
+      router = fn
+    raise ValueError("Recursion limit hit on route lookup.")
 
-    return fn(request, response)
-
-  def _lookup_route(self, request):
-    """Top-level request handler. Override to intercept every request."""
+  def _lookup_route(self, url, method, router=None):
+    """Figure out which URL matches."""
+    if not router:
+      router = self.router
     methods_allowed = []
-    for pattern, fn, methods in self.router.routes:
-      if pattern.startswith("^"):
-        match = re.match(pattern, request.path)
-      else:
-        pattern.endswith("*"):
-        match = request.path == pattern
+    for pattern, fn, methods in router.routes:
+      match = re.match(pattern, url)
       if match:
-        if methods and request.method not in methods:
+        if methods and method not in methods:
           methods_allowed.extend(methods)
           continue
-        if hasattr(match, 'groups'):
-          request.kwargs.update(match.groupdict())
-          request.args.extend(match.groups())
-          matched = match.group(0)
-        else:
-          matched =
-        return fn, pattern
+        return fn, match.group(0), match.groups(), match.groupdict()
     if methods_allowed:
       raise HttpError(
           405,
@@ -245,73 +247,3 @@ class App(Router):
       err.exception = e
       sys.stderr.write(err.traceback)
       return self._get_response(self.error_handler, request, err)
-
-
-##################
-## Sample App
-
-def main():
-
-  app = App()
-
-  import os
-
-
-  @app.route(r'/$')
-  def home(req, resp):
-    return "<html><h1>Hello World</h1></html>"
-
-
-  @app.route(r'/sleep/(\d+)$')
-  def sleepy_dave(req, resp):
-    #TODO: debug fact that this doesn't dump stacktrace to output
-    import time
-    time.sleep(int(req.args[0]))
-    return "Slept"
-
-
-  @app.route(r'/crash$')
-  def crashy(req, resp):
-    #TODO: debug fact that this doesn't dump stacktrace to output
-    raise Exception("BOOM")
-
-
-  @app.route(r'/files/$')
-  def dirlist(req, resp):
-    for f in os.listdir():
-      if os.path.isfile(f):
-        resp.append("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
-
-
-  @app.route(r'/files/([^/.][^/]*)$')
-  def files(req, resp):
-    if not os.path.exists(req.args[0]):
-      raise HttpError(404)
-    return FileResponse(req.args[0])
-
-
-  import wsgiref.simple_server
-  app.show_tracebacks = True
-  server = wsgiref.simple_server.make_server('', 8000, app)
-  print("Running on localhost:8000")
-  try:
-    server.serve_forever()
-  except KeyboardInterrupt:
-    pass
-
-
-if __name__ == '__main__':
-  main()
-
-###################################################
-# SCRATCH
-#################
-# if (isinstance(response.content, list) or
-#     isinstance(response.content, tuple) or
-#     isinstance(response.content, types.GeneratorType)):
-#   content = response.content
-# else:
-#   content = [response.content]
-# if not response.binary:  # auto-encode unicode
-#   content = (
-#       s.encode("utf-8") if isinstance(s, type(u'')) else s for s in content)
