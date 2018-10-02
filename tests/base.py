@@ -113,6 +113,27 @@ class TinyAppTestBase(unittest.TestCase):
       assertion_func(content, output, msg=msg)
 
   def assertProducesResponse(self, app, url, code, content=None, msg=None, **argv):
+    msg = ("url(%s)" % (url)) + (" : %s" % (msg) if msg else "")
     resp = Request(url, **argv).get_response(app)
     self.assertResponse(resp, code, content, msg)
 
+
+# import contextlib
+# import sys
+# import pdb
+# import bdb
+# #@contextlib.contextmanager
+# def debugged(*commands):
+#     def wrapper(*l,**k):
+#       p = pdb.Pdb()
+#       p.reset()
+#       p.rcLines.extend(commands)
+#       p.execRcLines()
+#       #sys.settrace(p.trace_dispatch)
+#       try:
+#           yield p
+#       except bdb.BdbQuit:
+#           pass
+#       finally:
+#           p.quitting = True
+#           sys.settrace(None)

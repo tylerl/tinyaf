@@ -107,6 +107,42 @@ class RouteTest(base.TinyAppTestBase):
     self.assertProducesResponse(app, "/fpx/d", 200, "D")
     self.assertProducesResponse(app, "/pfx/alias/c", 200, "C")
 
+  def test_bind_router_deep(self):
+    """Make sure that binding additional routers works even if there's lots of them."""
+    DEPTH = 60  # 100 is our depth max at the moment; not guarateed to be constant
+
+    # with Nodes along the way
+    r = app = tiny.App()
+    r.route("/_node")(lambda req, resp: "Node: 0")
+    for i in range(DEPTH):
+      rnext = tiny.Router()
+      rnext.route("/_node")(lambda req, resp: "Node: %i" % (i))
+      r.mount("/x", rnext)
+      r = rnext
+    for i in range(DEPTH):
+      url = "/".join([''] + ["x"] * i + ['_node'])
+      self.assertProducesResponse(app, url, 200, "Node: %i" % (i), msg="Node %i" % (i))
+
+    # without nodes along the way
+    r = app = tiny.App()
+    for i in range(DEPTH):
+      rnext = tiny.Router()
+      r.mount("/x", rnext)
+      r = rnext
+    r.route("/_node")(lambda req, resp: "Node: %i" % (DEPTH))
+    url = "/".join([''] + ["x"] * DEPTH + ['_node'])
+    self.assertProducesResponse(app, url, 200, "Node: %i" % (DEPTH))
+
+  # def test_bind_router_loop(self):
+  #   """Make sure we crash out with a self-referential bind loop."""
+  #   app = tiny.App()
+  #   app.mount("/", app)
+  #   #resp = base.Request("/").get_response(app)
+  #   #self.assertIsInstance(resp, tiny.HttpError)
+  #   self.assertProducesResponse(app, "/", 500)
+
+
+
     # TODO: test deep recursion (10-ish?)
     # TODO: test infinite recursion (valueerror -> http500)
 
@@ -124,3 +160,35 @@ class RouteTest(base.TinyAppTestBase):
 #    * headers
 
 # TODO: response stuff, encoding, file transfers, custom resonses, etc.
+
+class HandlingTest(base.TinyAppTestBase):
+  def test_http_error(self):
+    app = tiny.App()
+    @app.route("/err")
+    def _(i,o):
+      raise tiny.HttpError(567)
+    self.assertProducesResponse(app, "/err", 567)
+
+  def test_classic_exception(self):
+    app = tiny.App()
+    app.tracebacks_to_stderr=False
+    @app.route("/err")
+    def _(i,o):
+      raise ValueError("Boom!")
+    self.assertProducesResponse(app, "/err", 500)
+
+  def test_classic_traceback_display(self):
+    SENTINEL = "kTEHKdaRnkRSTf3upf4M"
+    app = tiny.App()
+    app.tracebacks_to_stderr=False
+    @app.route("/err")
+    def _(i,o):
+      raise ValueError(SENTINEL)
+
+    app.tracebacks_to_http = False
+    resp = base.Request("/err").get_response(app)
+    self.assertNotIn(SENTINEL, resp.output_str())
+
+    app.tracebacks_to_http = True
+    resp = base.Request("/err").get_response(app)
+    self.assertIn(SENTINEL, resp.output_str())

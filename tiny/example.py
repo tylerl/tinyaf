@@ -4,43 +4,47 @@ from . import tiny
 
 app = tiny.App()
 
-@app.route(r'/$')
+@app.route(r'/')
 def home(req, resp):
   return "<html><h1>Hello World</h1></html>"
 
-@app.route(r'/sleep/(\d+)$')
+@app.route(r'^/sleep/(\d+)$')
 def sleepy_dave(req, resp):
-  #TODO: debug fact that this doesn't dump stacktrace to output
   import time
   time.sleep(int(req.args[0]))
-  return "Slept"
+  return "Slept %i sec" % (int(req.args[0]))
 
-@app.route(r'/crash$')
+@app.route(r'/crash')
 def crashy(req, resp):
-  #TODO: debug fact that this doesn't dump stacktrace to output
   raise Exception("BOOM")
 
-@app.route(r'/files/$')
+fh = tiny.Router()
+@fh.route("/")
 def dirlist(req, resp):
   for f in os.listdir():
-    if os.path.isfile(f):
+    if not f.startswith(".") and os.path.isfile(f):
       resp.append("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
 
-@app.route(r'/files/([^/.][^/]*)$')
+@fh.route(r'^/([^/.][^/]*)$')
 def files(req, resp):
   if not os.path.exists(req.args[0]):
     raise tiny.HttpError(404)
   return tiny.FileResponse(req.args[0])
 
+app.route("/files")(lambda a,b: tiny.Response('',302,{'location':'/files/'}))
+app.mount("/files/", fh)
+
 def run():
-  import wsgiref.simple_server
-  app.show_tracebacks = True
-  server = wsgiref.simple_server.make_server('', 8000, app)
-  print("Running on localhost:8000")
+  app.tracebacks_to_http = True
+  server = app.make_server()
+  print("Running on %s:%s. Ctrl+C to exit." % server.server_address)
   try:
     server.serve_forever()
   except KeyboardInterrupt:
     pass
+
+if __name__ == "__main__":
+  run()
 
 ###################################################
 # SCRATCH
