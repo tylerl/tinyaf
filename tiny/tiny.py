@@ -26,13 +26,12 @@ class Router(object):
     """Decorator which gives you a handler for a given path."""
 
     def decorator(fn):
-      self.routes.append((path if path.startswith("^") else fnmatch.translate(path), fn, methods))
+      self.routes.append((path if path.startswith("^") else self._escape("/" + path), fn, methods))
       return fn
     return decorator
 
   def errorhandler(self, code):
     """Decorator which gives you a handler for a given HttpError status."""
-
     def decorator(fn):
       self.errorhandlers[code] = fn
       return fn
@@ -40,8 +39,23 @@ class Router(object):
 
   def mount(self, path, router):
     if not path.startswith("^"):
-      path = re.escape(path)
+      path = self._escape("/" + path + "/", partial=True)
     self.routes.append((path, router, []))
+
+  @staticmethod
+  def _escape(val, partial=False):
+    """Encode non-regex patterns as regex."""
+    def it(val):
+      i=0
+      yield "^"
+      for m in re.finditer(r'(\*)|(\{[a-zA-Z0-9]+\})', val):
+        if m.start() > i: yield re.escape(val[i:m.start()])
+        if m.group() == "*": yield r"[^/]+"
+        else: yield "(?P<%s>[^/]+)" % (m.group()[1:-1])
+        i = m.end()
+      if i < len(val): yield re.escape(val[i:])
+      if not partial: yield "$"
+    return "".join(it(re.sub("//+", "/", val)))
 
 
 class Request(object):
@@ -50,7 +64,6 @@ class Request(object):
   def __init__(self, environ):
     self.environ = environ
     self.path = environ['PATH_INFO']
-    self.args = []
     self.kwargs = {}
     self.method = environ['REQUEST_METHOD']
     self.fieldstorage = cgi.FieldStorage(
@@ -164,7 +177,6 @@ class App(Router):
     for _ in range(100):  # TTL sanity check
       fn, matched, args, kwargs = self._lookup_route(url, request.method, router)
       if not isinstance(fn, Router):
-        request.args.extend(args)
         request.kwargs.update(kwargs)
         return fn(request, response)
       request.kwargs.update(kwargs)

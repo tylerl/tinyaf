@@ -18,6 +18,20 @@ class RouteTest(base.TinyAppTestBase):
     self.assertProducesResponse(app, "/bar/foo", 404)
     self.assertProducesResponse(app, "/foo/bar", 404)
 
+  def test_fuzzy_route(self):
+    """Test non-regex pattern matching."""
+    app = tiny.App()
+    app.route("/")(lambda req,resp: "A")
+    app.route("/*/bar")(lambda req,resp: "B")
+    app.route("/foo/*/baz")(lambda req,resp: "C")
+
+    self.assertProducesResponse(app, "/", 200, "A")
+    self.assertProducesResponse(app, "/foo/bar", 200, "B")
+    self.assertProducesResponse(app, "/far/bar", 200, "B")
+    self.assertProducesResponse(app, "/foo/far/baz", 200, "C")
+    self.assertProducesResponse(app, "//bar", 404)
+    self.assertProducesResponse(app, "/foo/far", 404)
+
   def test_regex_route(self):
     """Verify regex routes are regex matched."""
     app = tiny.App()
@@ -71,6 +85,7 @@ class RouteTest(base.TinyAppTestBase):
     self.assertEqual(resp.headers_dict['Allow'], 'GET,POST')
 
   def test_separate_router(self):
+    """Verify that external routers can be supplied to an app."""
     r = tiny.Router()
     r.route("/")(lambda req,resp: "A")
     r.route(r"^/pf.x$")(lambda req,resp: "B")
@@ -87,6 +102,7 @@ class RouteTest(base.TinyAppTestBase):
     self.assertProducesResponse(app, "/bar", 200, "C")
 
   def test_bind_router(self):
+    """Verify that bind routes get routed to."""
     r1 = tiny.Router()
     r2 = tiny.Router()
     app = tiny.App()
@@ -108,7 +124,7 @@ class RouteTest(base.TinyAppTestBase):
     self.assertProducesResponse(app, "/pfx/alias/c", 200, "C")
 
   def test_bind_router_deep(self):
-    """Make sure that binding additional routers works even if there's lots of them."""
+    """Make sure that binding nested routers works even if there's lots of them."""
     DEPTH = 60  # 100 is our depth max at the moment; not guarateed to be constant
 
     # with Nodes along the way
@@ -133,29 +149,36 @@ class RouteTest(base.TinyAppTestBase):
     url = "/".join([''] + ["x"] * DEPTH + ['_node'])
     self.assertProducesResponse(app, url, 200, "Node: %i" % (DEPTH))
 
-  # def test_bind_router_loop(self):
-  #   """Make sure we crash out with a self-referential bind loop."""
-  #   app = tiny.App()
-  #   app.mount("/", app)
-  #   #resp = base.Request("/").get_response(app)
-  #   #self.assertIsInstance(resp, tiny.HttpError)
-  #   self.assertProducesResponse(app, "/", 500)
+  def test_bind_router_loop(self):
+    """Make sure we crash out with a self-referential bind loop."""
+    # Note: if this goes poorly, there's a chance of an infinite loop on this test.
+    app = tiny.App()
+    app.mount("/", app)
+    app.tracebacks_to_stderr = False
+    self.assertProducesResponse(app, "/", 500)
 
+  def test_route_kwargs(self):
+    handler = lambda req,rsp: " ".join("[%s]=[%s]" % (k,req.kwargs[k]) for k in sorted(req.kwargs))
+    app = tiny.App()
+    app.route("/a/{aa}")(handler)
+    app.route("/a/{aa}/{bb}.html")(handler)
+    app.route("/a/{aa}/{cc}.zip")(handler)
+    app.route(r"^/b/(?P<dd>[^/]+)/(?P<whatever>.*)")(handler)
 
-
-    # TODO: test deep recursion (10-ish?)
-    # TODO: test infinite recursion (valueerror -> http500)
+    self.assertProducesResponse(app, "/a/", 404)
+    self.assertProducesResponse(app, "/a/hello", 200, "[aa]=[hello]")
+    self.assertProducesResponse(app, "/a/world/", 404)
+    self.assertProducesResponse(app, "/a/hello/world.html", 200, "[aa]=[hello] [bb]=[world]")
+    self.assertProducesResponse(app, "/a/hello/world.zip", 200, "[aa]=[hello] [cc]=[world]")
+    self.assertProducesResponse(app, "/b/what/ev/er...", 200, "[dd]=[what] [whatever]=[ev/er...]")
 
 
 # TODO: Test
-#  * positional route arguments
-#  * kw route arguments
-#  * positional bind-mounted arguments (top-level only)
-#  * kw bind-mounted arguments (all levels)
+#  * kw bind-mounted arguments
 
 # TODO: Test
 #  * Request supplies:
-#    * args, kwargs
+#    * kwargs
 #    * fieldstores
 #    * headers
 

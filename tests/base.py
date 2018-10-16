@@ -6,15 +6,16 @@ import io
 
 import tiny
 
-_unquote = lambda x:x   # placate code completion
+try:
+  from urlparse import unquote  # PY3
+except ImportError:
+  from urllib.parse import unquote  # PY2
+
+
 if sys.version_info[0] == 2:  # PY2
   BYTE_TYPE = str
-  import urlparse
-  _unquote = urlparse.unquote
 else:  # PY3
   BYTE_TYPE = bytes
-  import urllib
-  _unquote = urllib.parse.unquote
 
 
 BASE_ENV = {
@@ -51,7 +52,7 @@ class Request(object):
       path, query = path.split('?', 1)
     else:
       path, query = path, ''
-    self.env['PATH_INFO'] = _unquote(path)
+    self.env['PATH_INFO'] = unquote(path)
     self.env['QUERY_STRING'] = query
     if self.postdata:
       self.env['CONTENT_LENGTH'] = len(self.postdata)
@@ -115,7 +116,7 @@ class TinyAppTestBase(unittest.TestCase):
     if content is not None:
       output = resp.output_str()
       assertion_func = self._getAssertEqualityFunc(content, output)
-      assertion_func(content, output, msg=msg)
+      assertion_func(content, output, msg=self._formatMessage(msg,'contents differ'))
 
   def assertProducesResponse(self, app, url, code, content=None, msg=None, **argv):
     msg = ("url(%s)" % (url)) + (" : %s" % (msg) if msg else "")
