@@ -6,10 +6,15 @@ import io
 
 import tiny
 
+_unquote = lambda x:x   # placate code completion
 if sys.version_info[0] == 2:  # PY2
   BYTE_TYPE = str
+  import urlparse
+  _unquote = urlparse.unquote
 else:  # PY3
   BYTE_TYPE = bytes
+  import urllib
+  _unquote = urllib.parse.unquote
 
 
 BASE_ENV = {
@@ -46,7 +51,7 @@ class Request(object):
       path, query = path.split('?', 1)
     else:
       path, query = path, ''
-    self.env['PATH_INFO'] = urllib.parse.unquote(path, 'iso-8859-1')
+    self.env['PATH_INFO'] = _unquote(path)
     self.env['QUERY_STRING'] = query
     if self.postdata:
       self.env['CONTENT_LENGTH'] = len(self.postdata)

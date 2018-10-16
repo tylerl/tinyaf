@@ -4,12 +4,15 @@ import functools
 import mimetypes
 import os
 import re
-import socketserver
 import sys
 import traceback
 import types
 import wsgiref.headers
 import wsgiref.simple_server
+try:
+  import socketserver  # py3
+except ImportError:
+  import SocketServer as socketserver  # py2
 
 STATUS_MSGS = {200: 'OK', 303: 'See Other', 404: 'Not Found', 500: 'Error'}
 
