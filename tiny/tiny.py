@@ -26,7 +26,8 @@ class Router(object):
     """Decorator which gives you a handler for a given path."""
 
     def decorator(fn):
-      self.routes.append((path if path.startswith("^") else self._escape("/" + path), fn, methods))
+      r = re.compile(path if path.startswith("^") else self._escape("/" + path))
+      self.routes.append((r, fn, methods))
       return fn
     return decorator
 
@@ -45,17 +46,19 @@ class Router(object):
   @staticmethod
   def _escape(val, partial=False):
     """Encode non-regex patterns as regex."""
+    esc = lambda s: re.escape(re.sub("//+", "/", s))
     def it(val):
       i=0
       yield "^"
-      for m in re.finditer(r'(\*)|(\{[a-zA-Z0-9]+\})', val):
-        if m.start() > i: yield re.escape(val[i:m.start()])
+      for m in re.finditer(r'({([a-zA-Z0-9\.]+)(?::((?:\\.|[^}])*))?})|(\*)', val):
+        if m.start() > i: yield esc(val[i:m.start()])
         if m.group() == "*": yield r"[^/]+"
-        else: yield "(?P<%s>[^/]+)" % (m.group()[1:-1])
+        else:
+          yield "(?P<%s>%s)" % (m.groups()[1], m.groups()[2] or r'[^/]+')
         i = m.end()
-      if i < len(val): yield re.escape(val[i:])
+      if i < len(val): yield esc(val[i:])
       if not partial: yield "$"
-    return "".join(it(re.sub("//+", "/", val)))
+    return "".join(it(val))
 
 
 class Request(object):
@@ -66,8 +69,7 @@ class Request(object):
     self.path = environ['PATH_INFO']
     self.kwargs = {}
     self.method = environ['REQUEST_METHOD']
-    self.fieldstorage = cgi.FieldStorage(
-        environ=environ, fp=environ.get('wsgi.input', None))
+    self.fieldstorage = cgi.FieldStorage(environ=environ, fp=environ.get('wsgi.input', None))
     try:
       self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
     except TypeError:
@@ -127,7 +129,7 @@ class FileResponse(Response):
     Response.__init__(self, **kwargs)
     self.close = close
     if not hasattr(file, 'read'):
-      file = open(file, "rb")
+      file = open(file, 'rb')
     if not content_type and hasattr(file, 'name'):
       content_type = mimetypes.guess_type(file.name)[0]
     if content_type:

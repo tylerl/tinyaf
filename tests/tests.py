@@ -164,6 +164,8 @@ class RouteTest(base.TinyAppTestBase):
     app.route("/a/{aa}/{bb}.html")(handler)
     app.route("/a/{aa}/{cc}.zip")(handler)
     app.route(r"^/b/(?P<dd>[^/]+)/(?P<whatever>.*)")(handler)
+    app.route("/c/{aa:ba.}/")(handler)
+    app.route("/d/{zz:.*}")(handler)
 
     self.assertProducesResponse(app, "/a/", 404)
     self.assertProducesResponse(app, "/a/hello", 200, "[aa]=[hello]")
@@ -172,11 +174,49 @@ class RouteTest(base.TinyAppTestBase):
     self.assertProducesResponse(app, "/a/hello/world.zip", 200, "[aa]=[hello] [cc]=[world]")
     self.assertProducesResponse(app, "/b/what/ev/er...", 200, "[dd]=[what] [whatever]=[ev/er...]")
 
+    self.assertProducesResponse(app, "/c/bar/", 200, "[aa]=[bar]")
+    self.assertProducesResponse(app, "/c/foo/", 404)
+    self.assertProducesResponse(app, "/d/foo/bar/baz", 200, "[zz]=[foo/bar/baz]")
+
+
+  def test_kwargs_with_bind(self):
+    handler = lambda req,rsp: " ".join("[%s]=[%s]" % (k,req.kwargs[k]) for k in sorted(req.kwargs))
+    app = tiny.App()
+    r1, r2, r3, r4 = (tiny.Router() for x in range(4))
+    r1.route("/{r1}/txt")(handler)
+    r2.route("/{r2}/")(handler)
+    r3.route("/{r3}")(handler)
+    r4.route("/four")(handler)
+    app.mount("/r1a/{base}/", r1)
+    app.mount("/r1b/{r1}/", r1)
+    app.mount("/r2/{base}/", r2)
+    app.mount("/r2a/{base}", r2)
+    app.mount("/r3/{base}/", r3)
+    app.mount("/r4/{base}/", r4)
+    app.mount("/r2b", r2)
+
+    self.assertProducesResponse(app, "/r1a/x1/x2/txt", 200, "[base]=[x1] [r1]=[x2]", "basic")
+    self.assertProducesResponse(app, "/r1b/x1/x2/txt", 200, "[r1]=[x2]", "mounted entry overrides")
+    self.assertProducesResponse(app, "/r2/x1/x2/", 200, "[base]=[x1] [r2]=[x2]", "with trailing slash")
+    self.assertProducesResponse(app, "/r2/x1/x2", 404, msg="called without trailing slash")
+    self.assertProducesResponse(app, "/r3/x1/x2", 200, "[base]=[x1] [r3]=[x2]", "trailing slash on mounted")
+    self.assertProducesResponse(app, "/r3/x1/x2/", 404, msg="trailing slash inappropraite")
+    self.assertProducesResponse(app, "/r2a/x1/x2/", 200, "[base]=[x1] [r2]=[x2]", "base trailing slash implicit")
+    self.assertProducesResponse(app, "/r4/x1/four", 200, "[base]=[x1]", "no kw on mounted")
+    self.assertProducesResponse(app, "/r4/x1/four", 200, "[base]=[x1]", "no kw on mounted")
+    self.assertProducesResponse(app, "/r2b/x1/", 200, "[r2]=[x1]", "no kw on base")
+
+class RequestTest(base.TinyAppTestBase):
+  def test_kwargs(self):
+    app = tiny.App()
+    @app.route("/api/{ver:v\d+}/get/{kind}/{id:\d+}/")
+    def _(req, resp):
+      raise NotImplementedError
+    pass
 
 # TODO: Test
-#  * kw bind-mounted arguments
-
-# TODO: Test
+#  * route: test regex compile exceptoin on route (not use)
+#
 #  * Request supplies:
 #    * kwargs
 #    * fieldstores
