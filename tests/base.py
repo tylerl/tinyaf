@@ -1,3 +1,5 @@
+import cgi
+import json
 import unittest
 import sys
 import functools
@@ -105,8 +107,8 @@ class Response(object):
   def output(self):
     return functools.reduce(lambda a, b: a + b, self.output_list, BYTE_TYPE())
 
-  def output_str(self):
-    return self.output().decode(self.encoding)
+  def output_str(self, encoding=None):
+    return self.output().decode(encoding or self.encoding)
 
 class TinyAppTestBase(unittest.TestCase):
   def assertResponse(self, resp, code, content=None, msg=None):
@@ -118,10 +120,28 @@ class TinyAppTestBase(unittest.TestCase):
       assertion_func = self._getAssertEqualityFunc(content, output)
       assertion_func(content, output, msg=self._formatMessage(msg,'contents differ'))
 
+  def assertJsonResponse(self, resp, obj, msg=None):
+    if resp.code != 200:
+      msg = self._formatMessage(msg, 'HTTP %r' % (resp.code))
+      raise self.failureException(msg)
+    content_type, params = cgi.parse_header(resp.headers_dict.get("content-type", ""))
+    encoding = params.get('encoding', 'utf-8')
+    self.assertEqual(content_type, 'application/json', "content-type differs")
+    output = json.loads(resp.output_str(encoding))
+    assertion_func = self._getAssertEqualityFunc(output, obj)
+    assertion_func(output, obj, msg=self._formatMessage(msg,'contents differ'))
+
+
   def assertProducesResponse(self, app, url, code, content=None, msg=None, **argv):
     msg = ("url(%s)" % (url)) + (" : %s" % (msg) if msg else "")
     resp = Request(url, **argv).get_response(app)
     self.assertResponse(resp, code, content, msg)
+
+  def assertProducesJson(self, app, url, obj, msg=None, **argv):
+    msg = ("url(%s)" % (url)) + (" : %s" % (msg) if msg else "")
+    resp = Request(url, **argv).get_response(app)
+    self.assertJsonResponse(resp, obj, msg)
+
 
 
 # import contextlib

@@ -1,16 +1,39 @@
+import html
+import pprint
 
-import wsgiref.simple_server
-try:
-  import socketserver  # py3
-except ImportError:
-  import SocketServer as socketserver  # py2
+from . import tiny
+
+app = tiny.App()
+
+@app.route("/dump.{fmt:(txt|json)}")
+def dump_request(req, resp):
+  resp.content_type = "text/plain"
+  out = dict(
+    environ={k:v for k,v in req.environ.items() if isinstance(v,str)},
+    fields=req.fields,
+    headers=dict(req.headers.items()),
+    method=req.method,
+    path=req.path,
+  )
+
+  fmt = req.kwargs.get('fmt','txt')
+  if fmt == 'json':
+    return tiny.JsonResponse(out)
+  if fmt == 'txt':
+    resp.content_type = 'text/plain'
+    pprint.pprint(out, stream=resp)
+
+@app.route("/")
+def home(req, resp):
+  return """
+  <p><a href="/dump.txt">dump.txt</a>
+  <p><a href="/dump.json">dump.json</a>
+  """
+
+def main():
+  app.route("/")
+  app.serve_forever()
 
 
-class ThreadedWSGIServer(socketserver.ThreadingMixIn,
-                          wsgiref.simple_server.WSGIServer):
-  """Simple WSGI server with threading mixin"""
-  daemon_threads = True
-
-def make_server(app, port=8080, host='', threaded=True):
-  sc = ThreadedWSGIServer if threaded else  wsgiref.simple_server.WSGIServer
-  return wsgiref.simple_server.make_server('', 8000, app, server_class=sc)
+if __name__ == '__main__':
+  main()

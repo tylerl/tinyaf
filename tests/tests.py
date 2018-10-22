@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import textwrap
+
 from . import base
 import tiny
 
@@ -209,10 +211,48 @@ class RouteTest(base.TinyAppTestBase):
 class RequestTest(base.TinyAppTestBase):
   def test_kwargs(self):
     app = tiny.App()
-    @app.route("/api/{ver:v\d+}/get/{kind}/{id:\d+}/")
+    @app.route("/api/{ver:v\d+}/get/{kind}/{id:\d+}")  # pylint: disable=W1401
     def _(req, resp):
-      raise NotImplementedError
-    pass
+      return tiny.JsonResponse(req.kwargs)
+    self.assertProducesJson(app, "/api/v2/get/fish/37", dict(id='37', kind='fish', ver='v2'))
+
+  def test_fields_formurl(self):
+    app = tiny.App()
+    app.route("/")(lambda req, _: tiny.JsonResponse(req.fields))
+    env = dict(CONTENT_TYPE="application/x-www-form-urlencoded")
+    data = "foo=bar&baz=2"
+    self.assertProducesJson(app, "/", dict(foo="bar",baz="2"), env=env, postdata=data)
+
+  def test_fields_formdata(self):
+    app = tiny.App()
+    app.route("/")(lambda req, _: tiny.JsonResponse(req.fields))
+    env = dict(CONTENT_TYPE="multipart/form-data; boundary=XyZ")
+    data = textwrap.dedent("""
+      --XyZ
+      content-disposition: form-data; name="hello"
+
+      world
+      --XyZ
+      content-disposition: form-data; name="foo"
+
+      42
+      --XyZ--
+    """)
+    self.assertProducesJson(app, "/", dict(hello='world',foo='42'), env=env, postdata=data)
+
+  def test_fields_querystring(self):
+    app = tiny.App()
+    app.route("/")(lambda req, _: tiny.JsonResponse(req.fields))
+    env=dict(QUERY_STRING='hello=world&foo=42')
+    self.assertProducesJson(app, "/", dict(hello='world',foo='42'), env=env)
+
+  # def test_headers(self):
+  #   app = tiny.App()
+  #   app.route("/")(lambda req, _: tiny.JsonResponse(dict(req.headers)))
+  #   env = dict(HTTP_FOO="bar")
+  #   self.assertProducesJson(app, "/", {}, env=env)
+
+  #   pass
 
 # TODO: Test
 #  * route: test regex compile exceptoin on route (not use)

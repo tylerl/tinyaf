@@ -1,6 +1,7 @@
 import cgi
 import fnmatch
 import functools
+import json
 import mimetypes
 import os
 import re
@@ -74,8 +75,8 @@ class Request(object):
       self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
     except TypeError:
       self.fields = {}
-    hl = [(k[5:], v) for k, v in environ.items() if k.startswith("HTTP_")]
-    self.headers = wsgiref.headers.Headers(hl)
+    hlist = [(k[5:], v) for k, v in environ.items() if k.startswith("HTTP_")]
+    self.headers = wsgiref.headers.Headers(hlist)
 
 
 class Response(object):
@@ -86,13 +87,11 @@ class Response(object):
     self._default_headers = {}
     self.content = content or []
     self.code = code
-    self.status = kwargs.get('status', None) or STATUS_MSGS.get(
-        code, 'Code %i' % (code))
+    self.status = kwargs.get('status', None)
     headers = headers or []
-    self.headers = wsgiref.headers.Headers(list(
-        getattr(headers, 'items', lambda: headers)()))
+    self.headers = wsgiref.headers.Headers(list(getattr(headers, 'items', lambda: headers)()))
 
-  def append(self, *content):
+  def write(self, *content):
     self.content.extend(content)
 
   def towsgi(self, start_response):
@@ -116,12 +115,23 @@ class StringResponse(Response):
     self.charset = charset
 
   def finalize(self):
-    if self.content_type:
-      self._default_headers[
-          'content-type'] = "%s;charset=%s" % (self.content_type, self.charset)
     out = ''.join(self.content).encode(self.charset)
+    self._default_headers['content-type'] = "%s ;charset=%s" % (self.content_type, self.charset)
     self._default_headers['content-length'] = len(out)
     return (out,)
+
+
+class JsonResponse(StringResponse):
+  def __init__(self, val=None, sort_keys = True, **kwargs):
+    self.val = val
+    self.sort_keys = sort_keys
+    self.json_args = kwargs.pop('json_args', {})
+    kwargs.setdefault('content_type', 'application/json')
+    StringResponse.__init__(self, **kwargs)
+
+  def finalize(self):
+    self.content = (json.dumps(self.val, sort_keys=self.sort_keys, **self.json_args),)
+    return StringResponse.finalize(self)
 
 
 class FileResponse(Response):
@@ -177,7 +187,7 @@ class App(Router):
     url = request.path
     router = self.router
     for _ in range(100):  # TTL sanity check
-      fn, matched, args, kwargs = self._lookup_route(url, request.method, router)
+      fn, matched, kwargs = self._lookup_route(url, request.method, router)
       if not isinstance(fn, Router):
         request.kwargs.update(kwargs)
         return fn(request, response)
@@ -197,7 +207,7 @@ class App(Router):
         if methods and method not in methods:
           methods_allowed.extend(methods)
           continue
-        return fn, match.group(0), match.groups(), match.groupdict()
+        return fn, match.group(0), match.groupdict()
     if methods_allowed:
       raise HttpError(
           405,
@@ -216,17 +226,17 @@ class App(Router):
       return
     if self.tracebacks_to_http and hasattr(http_error, 'traceback'):
       http_error.headers['Content-type'] = 'text/plain'
-      http_error.append("An error occurred:\n\n", http_error.traceback)
+      http_error.write("An error occurred:\n\n", http_error.traceback)
       return
     http_error.headers['Content-type'] = 'text/html'
     if http_error.status == "Unknown":
-      http_error.append("<h1>HTTP %i</h1>" % (http_error.code))
+      http_error.write("<h1>HTTP %i</h1>\n" % (http_error.code))
     else:
-      http_error.append("<h1>HTTP %i - %s</h1>" % (http_error.code, http_error.status))
-    http_error.append("<p>Your request could not be processed.</p>")
+      http_error.write("<h1>HTTP %i - %s</h1>" % (http_error.code, http_error.status))
+    http_error.write("<p>Your request could not be processed.</p>\n")
     if http_error.code == 405:
-      http_error.append("<p><b>Methods allowed:</b> %s</p>" % (http_error.headers['Allow']))
-      http_error.append("<p><b>Method used:</b> %s</p>" % (request.method))
+      http_error.write("<p><b>Methods allowed:</b> %s</p>\n" % (http_error.headers['Allow']))
+      http_error.write("<p><b>Method used:</b> %s</p>\n" % (request.method))
 
   def __call__(self, environ, start_response):
     """WSGI entrypoint."""
@@ -243,7 +253,7 @@ class App(Router):
       if isinstance(result, Response):
         response = result
       else:
-        response.append(result)
+        response.write(result)
     return response
 
   def _get_response_handled(self, fn, request, response):
@@ -260,8 +270,13 @@ class App(Router):
       return self._get_response(self.error_handler, request, http_error)
 
   def make_server(self, port=8080, host='', threaded=True):
-    sc = ThreadedWSGIServer if threaded else  wsgiref.simple_server.WSGIServer
+    sc = ThreadedWSGIServer if threaded else wsgiref.simple_server.WSGIServer
     return wsgiref.simple_server.make_server(host, port, self, server_class=sc)
+
+  def serve_forever(self, port=8080, host='', threaded=True):
+    print("Serving on %s:%s -- ctrl+c to quit." % (host, port))
+    try: self.make_server(port, host, threaded).serve_forever()
+    except KeyboardInterrupt: pass
 
 class ThreadedWSGIServer(socketserver.ThreadingMixIn,
                           wsgiref.simple_server.WSGIServer):
