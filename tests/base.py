@@ -42,14 +42,14 @@ class RequestFailure(AssertionError):
   """Something went wrong with the WSGI protocol interaction."""
 
 class Request(object):
-  def __init__(self, path, **argv):
+  def __init__(self, path, postdata=None, method=None, env=None):
     self.env = BASE_ENV.copy()
-    self.postdata = argv.get('postdata', None)
+    self.postdata = postdata
     if isinstance(self.postdata, str):
       self.postdata = self.postdata.encode('utf-8')
-    self.env['REMOTE_HOST'] = argv.get('host', 'localhost')
-    self.env['SERVER_PROTOCOL'] = argv.get('version', 'HTTP/1.1')
-    self.env['REQUEST_METHOD'] = argv.get('method','POST' if self.postdata else 'GET')
+    self.env['REMOTE_HOST'] = 'localhost'
+    self.env['SERVER_PROTOCOL'] = 'HTTP/1.1'
+    self.env['REQUEST_METHOD'] = method or ('POST' if self.postdata else 'GET')
     if '?' in path:
       path, query = path.split('?', 1)
     else:
@@ -58,11 +58,10 @@ class Request(object):
     self.env['QUERY_STRING'] = query
     if self.postdata:
       self.env['CONTENT_LENGTH'] = len(self.postdata)
-    self.env.update(argv.get('env', {}))
+    self.env.update(env or {})
 
   def _environ(self):
     env = self.env.copy()
-
     env['wsgi.input'] = io.BytesIO(self.postdata)
     env['wsgi.errors'] = io.BytesIO()
     return env
@@ -110,37 +109,57 @@ class Response(object):
   def output_str(self, encoding=None):
     return self.output().decode(encoding or self.encoding)
 
+  def output_json(self, validate=True):
+    content_type, params = cgi.parse_header(self.headers_dict.get("content-type", ""))
+    encoding = params.get('encoding', 'utf-8')
+    if validate and content_type != "application/json":
+      raise AssertionError("expected content-type: application/json, got '%s'" % (content_type))
+    return json.loads(self.output_str(encoding))
+
 class TinyAppTestBase(unittest.TestCase):
+
+  def assertDictFuzzy(self, subset, dictionary, msg=None):
+    """Assert dict subset, but ignoring case on keys."""
+    dictionary = {k.upper():v for k,v in dictionary.items()}
+    dictionaryFiltered = {}
+    for k in subset:
+      try:
+        dictionaryFiltered[k] = dictionary[k.upper()]
+      except KeyError:
+        pass
+    self.assertEqual(subset, dictionaryFiltered, msg)
+
   def assertResponse(self, resp, code, content=None, msg=None):
     if code != resp.code:
       msg = self._formatMessage(msg, 'expected HTTP %r, got HTTP %r' % (code, resp.code))
       raise self.failureException(msg)
     if content is not None:
       output = resp.output_str()
-      assertion_func = self._getAssertEqualityFunc(content, output)
-      assertion_func(content, output, msg=self._formatMessage(msg,'contents differ'))
+      self.assertEqual(content, output, msg=self._formatMessage(msg,'contents differ'))
 
   def assertJsonResponse(self, resp, obj, msg=None):
-    if resp.code != 200:
-      msg = self._formatMessage(msg, 'HTTP %r' % (resp.code))
-      raise self.failureException(msg)
-    content_type, params = cgi.parse_header(resp.headers_dict.get("content-type", ""))
-    encoding = params.get('encoding', 'utf-8')
-    self.assertEqual(content_type, 'application/json', "content-type differs")
-    output = json.loads(resp.output_str(encoding))
-    assertion_func = self._getAssertEqualityFunc(output, obj)
-    assertion_func(output, obj, msg=self._formatMessage(msg,'contents differ'))
+    self.assertResponse(resp, 200)
+    output = resp.output_json()
+    self.assertEqual(obj, output, msg=self._formatMessage(msg,'contents differ'))
 
+  def assertJsonDictFuzzy(self, resp, obj, msg=None):
+    self.assertResponse(resp, 200)
+    output = resp.output_json()
+    self.assertDictFuzzy(obj, output, msg)
 
   def assertProducesResponse(self, app, url, code, content=None, msg=None, **argv):
     msg = ("url(%s)" % (url)) + (" : %s" % (msg) if msg else "")
     resp = Request(url, **argv).get_response(app)
     self.assertResponse(resp, code, content, msg)
 
-  def assertProducesJson(self, app, url, obj, msg=None, **argv):
+  def assertProducesJson(self, app, url, obj, msg=None, fuzzy=False, **argv):
     msg = ("url(%s)" % (url)) + (" : %s" % (msg) if msg else "")
     resp = Request(url, **argv).get_response(app)
-    self.assertJsonResponse(resp, obj, msg)
+    if fuzzy:
+      self.assertJsonDictFuzzy(resp, obj, msg)
+    else:
+      self.assertJsonResponse(resp, obj, msg)
+
 
 
 

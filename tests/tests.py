@@ -246,23 +246,19 @@ class RequestTest(base.TinyAppTestBase):
     env=dict(QUERY_STRING='hello=world&foo=42')
     self.assertProducesJson(app, "/", dict(hello='world',foo='42'), env=env)
 
-  # def test_headers(self):
-  #   app = tiny.App()
-  #   app.route("/")(lambda req, _: tiny.JsonResponse(dict(req.headers)))
-  #   env = dict(HTTP_FOO="bar")
-  #   self.assertProducesJson(app, "/", {}, env=env)
+  def test_headers(self):
+    app = tiny.App()
+    app.route("/")(lambda req, _: tiny.JsonResponse(dict(req.headers)))
+    self.assertProducesJson(app, "/", obj={"Accept-Language":"en-US", "Connection": "close"},
+        fuzzy=True, env=dict(HTTP_ACCEPT_LANGUAGE='en-US', HTTP_CONNECTION='close'))
 
-  #   pass
+  def test_reqvars(self):
+    app = tiny.App()
+    app.route(r"^.*")(lambda req, _: tiny.JsonResponse(dict(method=req.method, path=req.path)))
+    self.assertProducesJson(app, "/foo/bar?baz", dict(method="GET",path="/foo/bar"))
 
-# TODO: Test
-#  * route: test regex compile exceptoin on route (not use)
-#
-#  * Request supplies:
-#    * kwargs
-#    * fieldstores
-#    * headers
 
-# TODO: response stuff, encoding, file transfers, custom resonses, etc.
+# TODO: response stuff, encoding, file transfers, custom responses, etc.
 
 class HandlingTest(base.TinyAppTestBase):
   def test_http_error(self):

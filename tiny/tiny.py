@@ -12,11 +12,16 @@ import wsgiref.headers
 import wsgiref.simple_server
 try:
   import socketserver  # py3
+  import http
+  def _http_status(code):
+    try:
+      s = http.HTTPStatus(code); return s.phrase, s.description  # pylint: disable=E1120
+    except ValueError: return "Unknown", ""
 except ImportError:
   import SocketServer as socketserver  # py2
-
-STATUS_MSGS = {200: 'OK', 303: 'See Other', 404: 'Not Found', 500: 'Error'}
-
+  import httplib
+  def _http_status(code):
+    return httplib.responses.get(code, 'Unknown')
 
 class Router(object):
   def __init__(self):
@@ -66,16 +71,16 @@ class Request(object):
   """Request encapsulates the HTTP request info sent to your handler."""
 
   def __init__(self, environ):
+    self.kwargs = {}  # updated when routing decision is calcuated
     self.environ = environ
     self.path = environ['PATH_INFO']
-    self.kwargs = {}
     self.method = environ['REQUEST_METHOD']
     self.fieldstorage = cgi.FieldStorage(environ=environ, fp=environ.get('wsgi.input', None))
     try:
       self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
     except TypeError:
       self.fields = {}
-    hlist = [(k[5:], v) for k, v in environ.items() if k.startswith("HTTP_")]
+    hlist = [(k[5:].replace("_","-").title(), v) for k, v in environ.items() if k.startswith("HTTP_")]
     self.headers = wsgiref.headers.Headers(hlist)
 
 
@@ -87,7 +92,6 @@ class Response(object):
     self._default_headers = {}
     self.content = content or []
     self.code = code
-    self.status = kwargs.get('status', None)
     headers = headers or []
     self.headers = wsgiref.headers.Headers(list(getattr(headers, 'items', lambda: headers)()))
 
@@ -96,12 +100,13 @@ class Response(object):
 
   def towsgi(self, start_response):
     content = self.finalize() or self.content or []
-    code = self.code or 500
-    status = self.status or STATUS_MSGS.get(code, 'Code %i' % (code))
-    for h, v in self._default_headers.items():
-      self.headers.setdefault(h, str(v))
-    start_response("%i %s" % (code, status), list(self.headers.items()))
+    self.code = self.code or 500
+    for h, v in self._default_headers.items(): self.headers.setdefault(h, str(v))
+    start_response("%i %s" % (self.code, self.http_status()[0]), list(self.headers.items()))
     return content
+
+  def http_status(self):
+    return _http_status(self.code)
 
   def finalize(self):
     pass
@@ -211,7 +216,6 @@ class App(Router):
     if methods_allowed:
       raise HttpError(
           405,
-          status="Method not Allowed",
           headers={'Allow': ",".join(methods_allowed)})
     raise HttpError(404)
 
@@ -229,11 +233,9 @@ class App(Router):
       http_error.write("An error occurred:\n\n", http_error.traceback)
       return
     http_error.headers['Content-type'] = 'text/html'
-    if http_error.status == "Unknown":
-      http_error.write("<h1>HTTP %i</h1>\n" % (http_error.code))
-    else:
-      http_error.write("<h1>HTTP %i - %s</h1>" % (http_error.code, http_error.status))
-    http_error.write("<p>Your request could not be processed.</p>\n")
+    phrase, description = http_error.http_status()
+    http_error.write("<h1>HTTP %s - %s</h1>" % (http_error.code, phrase))
+    http_error.write("<p>%s.</p>\n" % (description or "Your request could not be processed"))
     if http_error.code == 405:
       http_error.write("<p><b>Methods allowed:</b> %s</p>\n" % (http_error.headers['Allow']))
       http_error.write("<p><b>Method used:</b> %s</p>\n" % (request.method))
@@ -277,6 +279,7 @@ class App(Router):
     print("Serving on %s:%s -- ctrl+c to quit." % (host, port))
     try: self.make_server(port, host, threaded).serve_forever()
     except KeyboardInterrupt: pass
+
 
 class ThreadedWSGIServer(socketserver.ThreadingMixIn,
                           wsgiref.simple_server.WSGIServer):
