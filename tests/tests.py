@@ -10,9 +10,9 @@ class RouteTest(base.TinyAppTestBase):
   def test_exact_route(self):
     """Verify non-regex routes aren't regex or prefix matched."""
     app = tiny.App()
-    app.route("/")(lambda req,resp: "A")
-    app.route("/fo.")(lambda req,resp: "B")
-    app.route("/bar")(lambda req,resp: "X")
+    app.route("/", handler=lambda req,resp: "A")
+    app.route("/fo.", handler=lambda req,resp: "B")
+    app.route("/bar", handler=lambda req,resp: "X")
 
     self.assertProducesResponse(app, "/", 200, "A")
     self.assertProducesResponse(app, "/fo.", 200, "B")
@@ -23,9 +23,9 @@ class RouteTest(base.TinyAppTestBase):
   def test_fuzzy_route(self):
     """Test non-regex pattern matching."""
     app = tiny.App()
-    app.route("/")(lambda req,resp: "A")
-    app.route("/*/bar")(lambda req,resp: "B")
-    app.route("/foo/*/baz")(lambda req,resp: "C")
+    app.route("/", handler=lambda req,resp: "A")
+    app.route("/*/bar", handler=lambda req,resp: "B")
+    app.route("/foo/*/baz", handler=lambda req,resp: "C")
 
     self.assertProducesResponse(app, "/", 200, "A")
     self.assertProducesResponse(app, "/foo/bar", 200, "B")
@@ -37,9 +37,9 @@ class RouteTest(base.TinyAppTestBase):
   def test_regex_route(self):
     """Verify regex routes are regex matched."""
     app = tiny.App()
-    app.route(r"^/$")(lambda req,resp: "A")
-    app.route(r"^/fo.$")(lambda req,resp: "B")
-    app.route(r"^/bar")(lambda req,resp: "pfx")
+    app.route(r"^/$", handler=lambda req,resp: "A")
+    app.route(r"^/fo.$", handler=lambda req,resp: "B")
+    app.route(r"^/bar", handler=lambda req,resp: "pfx")
 
     self.assertProducesResponse(app, "/", 200, "A")
     self.assertProducesResponse(app, "/foo", 200, "B")
@@ -49,9 +49,9 @@ class RouteTest(base.TinyAppTestBase):
   def test_error_handler(self):
     """Verify custom error handlers get called, even on implicit (404) Errors."""
     app = tiny.App()
-    app.route(r"/")(lambda req,resp: "OK")
-    app.errorhandler(404)(lambda req,resp: "NOT OK")
-    app.errorhandler(567)(lambda req,resp: "OTHER")
+    app.route(r"/", handler=lambda req,resp: "OK")
+    app.errorhandler(404, handler=lambda req,resp: "NOT OK")
+    app.errorhandler(567, handler=lambda req,resp: "OTHER")
     @app.route("/other")
     def _(i,o):
       raise tiny.HttpError(567)
@@ -63,11 +63,11 @@ class RouteTest(base.TinyAppTestBase):
   def test_method_miss(self):
     """Verify 405s error generated for method not found."""
     app = tiny.App()
-    app.route(r"/", 'GET')(lambda req,resp: "/@G")
-    app.route(r"/", 'POST')(lambda req,resp: "/@P")
-    app.route(r"/gp", 'GET', 'POST')(lambda req,resp: "/gp@GP")
-    app.route(r"/g", 'GET')(lambda req,resp: "/g@G")
-    app.route(r"/p", 'POST')(lambda req,resp: "/p@P")
+    app.route(r"/", methods=['GET'], handler=lambda req,resp: "/@G")
+    app.route(r"/", methods=['POST'], handler=lambda req,resp: "/@P")
+    app.route(r"/gp", methods=['GET', 'POST'], handler=lambda req,resp: "/gp@GP")
+    app.route(r"/g", methods=['GET'], handler=lambda req,resp: "/g@G")
+    app.route(r"/p", methods=['POST'], handler=lambda req,resp: "/p@P")
     # check routing
     self.assertProducesResponse(app, "/", 200, "/@G", postdata=None)
     self.assertProducesResponse(app, "/", 200, "/@P", postdata='foo!')
@@ -89,15 +89,15 @@ class RouteTest(base.TinyAppTestBase):
   def test_separate_router(self):
     """Verify that external routers can be supplied to an app."""
     r = tiny.Router()
-    r.route("/")(lambda req,resp: "A")
-    r.route(r"^/pf.x$")(lambda req,resp: "B")
-    r.errorhandler(404)(lambda req,resp: "Z")
+    r.route("/", handler=lambda req,resp: "A")
+    r.route(r"^/pf.x$", handler=lambda req,resp: "B")
+    r.errorhandler(404, handler=lambda req,resp: "Z")
     app = tiny.App(router=r)
     self.assertProducesResponse(app, "/", 200, "A")
     self.assertProducesResponse(app, "/pf0x", 200, "B")
     self.assertProducesResponse(app, "/nofind", 404, "Z")
     # and then complicate by adding another route and validating old ones
-    r.route("/bar")(lambda req,resp: "C")
+    r.route("/bar", handler=lambda req,resp: "C")
     self.assertProducesResponse(app, "/", 200, "A")
     self.assertProducesResponse(app, "/pf0x", 200, "B")
     self.assertProducesResponse(app, "/nofind", 404, "Z")
@@ -108,10 +108,10 @@ class RouteTest(base.TinyAppTestBase):
     r1 = tiny.Router()
     r2 = tiny.Router()
     app = tiny.App()
-    r1.route("/a")(lambda req,resp: "A")
-    r1.route("/b")(lambda req,resp: "B")
-    r2.route("/c")(lambda req,resp: "C")
-    r2.route("/d")(lambda req,resp: "D")
+    r1.route("/a", handler=lambda req,resp: "A")
+    r1.route("/b", handler=lambda req,resp: "B")
+    r2.route("/c", handler=lambda req,resp: "C")
+    r2.route("/d", handler=lambda req,resp: "D")
     app.mount('/pfx', r1)
     app.mount('/fpx', r2)
     r1.mount('/alias/', r2)
@@ -131,10 +131,10 @@ class RouteTest(base.TinyAppTestBase):
 
     # with Nodes along the way
     r = app = tiny.App()
-    r.route("/_node")(lambda req, resp: "Node: 0")
+    r.route("/_node", handler=lambda req, resp: "Node: 0")
     for i in range(DEPTH):
       rnext = tiny.Router()
-      rnext.route("/_node")(lambda req, resp: "Node: %i" % (i))
+      rnext.route("/_node", handler=lambda req, resp: "Node: %i" % (i))
       r.mount("/x", rnext)
       r = rnext
     for i in range(DEPTH):
@@ -147,7 +147,7 @@ class RouteTest(base.TinyAppTestBase):
       rnext = tiny.Router()
       r.mount("/x", rnext)
       r = rnext
-    r.route("/_node")(lambda req, resp: "Node: %i" % (DEPTH))
+    r.route("/_node", handler=lambda req, resp: "Node: %i" % (DEPTH))
     url = "/".join([''] + ["x"] * DEPTH + ['_node'])
     self.assertProducesResponse(app, url, 200, "Node: %i" % (DEPTH))
 
@@ -162,12 +162,12 @@ class RouteTest(base.TinyAppTestBase):
   def test_route_kwargs(self):
     handler = lambda req,rsp: " ".join("[%s]=[%s]" % (k,req.kwargs[k]) for k in sorted(req.kwargs))
     app = tiny.App()
-    app.route("/a/{aa}")(handler)
-    app.route("/a/{aa}/{bb}.html")(handler)
-    app.route("/a/{aa}/{cc}.zip")(handler)
-    app.route(r"^/b/(?P<dd>[^/]+)/(?P<whatever>.*)")(handler)
-    app.route("/c/{aa:ba.}/")(handler)
-    app.route("/d/{zz:.*}")(handler)
+    app.route("/a/{aa}", handler=handler)
+    app.route("/a/{aa}/{bb}.html", handler=handler)
+    app.route("/a/{aa}/{cc}.zip", handler=handler)
+    app.route(r"^/b/(?P<dd>[^/]+)/(?P<whatever>.*)", handler=handler)
+    app.route("/c/{aa:ba.}/", handler=handler)
+    app.route("/d/{zz:.*}", handler=handler)
 
     self.assertProducesResponse(app, "/a/", 404)
     self.assertProducesResponse(app, "/a/hello", 200, "[aa]=[hello]")
@@ -185,10 +185,10 @@ class RouteTest(base.TinyAppTestBase):
     handler = lambda req,rsp: " ".join("[%s]=[%s]" % (k,req.kwargs[k]) for k in sorted(req.kwargs))
     app = tiny.App()
     r1, r2, r3, r4 = (tiny.Router() for x in range(4))
-    r1.route("/{r1}/txt")(handler)
-    r2.route("/{r2}/")(handler)
-    r3.route("/{r3}")(handler)
-    r4.route("/four")(handler)
+    r1.route("/{r1}/txt", handler=handler)
+    r2.route("/{r2}/", handler=handler)
+    r3.route("/{r3}", handler=handler)
+    r4.route("/four", handler=handler)
     app.mount("/r1a/{base}/", r1)
     app.mount("/r1b/{r1}/", r1)
     app.mount("/r2/{base}/", r2)
@@ -218,14 +218,14 @@ class RequestTest(base.TinyAppTestBase):
 
   def test_fields_formurl(self):
     app = tiny.App()
-    app.route("/")(lambda req, _: tiny.JsonResponse(req.fields))
+    app.route("/", handler=lambda req, _: tiny.JsonResponse(req.fields))
     env = dict(CONTENT_TYPE="application/x-www-form-urlencoded")
     data = "foo=bar&baz=2"
     self.assertProducesJson(app, "/", dict(foo="bar",baz="2"), env=env, postdata=data)
 
   def test_fields_formdata(self):
     app = tiny.App()
-    app.route("/")(lambda req, _: tiny.JsonResponse(req.fields))
+    app.route("/", handler=lambda req, _: tiny.JsonResponse(req.fields))
     env = dict(CONTENT_TYPE="multipart/form-data; boundary=XyZ")
     data = textwrap.dedent("""
       --XyZ
@@ -242,23 +242,64 @@ class RequestTest(base.TinyAppTestBase):
 
   def test_fields_querystring(self):
     app = tiny.App()
-    app.route("/")(lambda req, _: tiny.JsonResponse(req.fields))
+    app.route("/", handler=lambda req, _: tiny.JsonResponse(req.fields))
     env=dict(QUERY_STRING='hello=world&foo=42')
     self.assertProducesJson(app, "/", dict(hello='world',foo='42'), env=env)
 
   def test_headers(self):
     app = tiny.App()
-    app.route("/")(lambda req, _: tiny.JsonResponse(dict(req.headers)))
+    app.route("/", handler=lambda req, _: tiny.JsonResponse(dict(req.headers)))
     self.assertProducesJson(app, "/", obj={"Accept-Language":"en-US", "Connection": "close"},
         fuzzy=True, env=dict(HTTP_ACCEPT_LANGUAGE='en-US', HTTP_CONNECTION='close'))
 
   def test_reqvars(self):
     app = tiny.App()
-    app.route(r"^.*")(lambda req, _: tiny.JsonResponse(dict(method=req.method, path=req.path)))
+    app.route(r"^.*", handler=lambda req, _: tiny.JsonResponse(dict(method=req.method, path=req.path)))
     self.assertProducesJson(app, "/foo/bar?baz", dict(method="GET",path="/foo/bar"))
 
 
-# TODO: response stuff, encoding, file transfers, custom responses, etc.
+class ResponseTest(base.TinyAppTestBase):
+
+  def test_write(self):
+    app = tiny.App()
+    @app.route("/")
+    def _(_resp, _req):
+      resp = tiny.Response()
+      resp.write("hello".encode('utf-8'))
+      resp.write(" world".encode('utf-8'))
+      return resp
+    self.assertProducesResponse(app, "/", 200, "hello world")
+
+  def test_contents_array(self):
+    app = tiny.App()
+    @app.route("/")
+    def _(_resp, _req):
+      return tiny.Response(content=["hello world".encode("utf-8")])
+    self.assertProducesResponse(app, "/", 200, "hello world")
+
+  def test_contents_iter(self):
+    app = tiny.App()
+    @app.route("/")
+    def _(_resp, _req):
+      return tiny.Response(content=(x.encode('utf-8') for x in "hello again world".split()))
+    self.assertProducesResponse(app, "/", 200, "helloagainworld")
+
+  def test_default_headers(self):
+    app = tiny.App()
+    @app.route("/")
+    def _(req, resp):
+      if 'ct' in req:
+        resp.headers['content-type'] = req['ct']
+      return "OK"
+    r_def = base.Request("/").get_response(app)
+    r_alt = base.Request("/?ct=text/poem").get_response(app)
+    self.assertResponse(r_def, 200, "OK")
+    self.assertResponse(r_alt, 200, "OK")
+    self.assertEqual("text/html; charset=utf-8", r_def.headers_dict['content-type'])
+    self.assertEqual("text/poem", r_alt.headers_dict['content-type'])
+
+
+# TODO: json response, file response, encoding
 
 class HandlingTest(base.TinyAppTestBase):
   def test_http_error(self):

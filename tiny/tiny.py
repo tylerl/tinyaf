@@ -28,20 +28,21 @@ class Router(object):
     self.errorhandlers = {}
     self.routes = []
 
-  def route(self, path, *methods):
-    """Decorator which gives you a handler for a given path."""
-
+  def route(self, path, handler=None, methods=None):
     def decorator(fn):
       r = re.compile(path if path.startswith("^") else self._escape("/" + path))
-      self.routes.append((r, fn, methods))
+      self.routes.append((r, fn, methods or []))
       return fn
+    if handler:
+      return decorator(handler)
     return decorator
 
-  def errorhandler(self, code):
-    """Decorator which gives you a handler for a given HttpError status."""
+  def errorhandler(self, code, handler=None):
     def decorator(fn):
       self.errorhandlers[code] = fn
       return fn
+    if handler:
+      return decorator(handler)
     return decorator
 
   def mount(self, path, router):
@@ -83,6 +84,12 @@ class Request(object):
     hlist = [(k[5:].replace("_","-").title(), v) for k, v in environ.items() if k.startswith("HTTP_")]
     self.headers = wsgiref.headers.Headers(hlist)
 
+  def __getitem__(self, key):
+    try: return self.kwargs[key]
+    except KeyError: return self.fields[key]
+
+  def __contains__(self, key):
+    return key in self.kwargs or key in self.fields
 
 class Response(object):
   """Response contains the status, headers, and content of an HTTP response.
@@ -98,7 +105,7 @@ class Response(object):
   def write(self, *content):
     self.content.extend(content)
 
-  def towsgi(self, start_response):
+  def _towsgi(self, start_response):
     content = self.finalize() or self.content or []
     self.code = self.code or 500
     for h, v in self._default_headers.items(): self.headers.setdefault(h, str(v))
@@ -121,7 +128,7 @@ class StringResponse(Response):
 
   def finalize(self):
     out = ''.join(self.content).encode(self.charset)
-    self._default_headers['content-type'] = "%s ;charset=%s" % (self.content_type, self.charset)
+    self._default_headers['content-type'] = "%s; charset=%s" % (self.content_type, self.charset)
     self._default_headers['content-length'] = len(out)
     return (out,)
 
@@ -242,7 +249,7 @@ class App(Router):
 
   def __call__(self, environ, start_response):
     """WSGI entrypoint."""
-    return self._process_request(Request(environ)).towsgi(start_response)
+    return self._process_request(Request(environ))._towsgi(start_response)
 
   def _process_request(self, request):
     """Call the base request handler and get a response."""

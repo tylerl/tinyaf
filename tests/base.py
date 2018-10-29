@@ -94,7 +94,7 @@ class Response(object):
 
   def __init__(self, output, status, headers):
     self.output_list = output
-    self.headers = headers
+    self.headers_list = headers
     self.headers_dict = dict(headers)
     try:
       code, stat = status.split(" ", 1)
