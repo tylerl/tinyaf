@@ -23,6 +23,14 @@ except ImportError:
   def _http_status(code):
     return httplib.responses.get(code, 'Unknown')
 
+#############################################################################
+## TODO:
+#   * Simplified Router class that just saves a dict per route in the list
+#   * Add wsgi-compatible sub-request processing to req/resp/app framework
+#   * Get rid of bind routing (replaced by above)
+#   * Modify FileResponse to use wsgi.file_wrapper
+
+
 class Router(object):
   def __init__(self):
     self.errorhandlers = {}
