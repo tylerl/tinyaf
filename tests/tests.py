@@ -103,110 +103,6 @@ class RouteTest(base.TinyAppTestBase):
     self.assertProducesResponse(app, "/nofind", 404, "Z")
     self.assertProducesResponse(app, "/bar", 200, "C")
 
-  def test_bind_router(self):
-    """Verify that bind routes get routed to."""
-    r1 = tiny.Router()
-    r2 = tiny.Router()
-    app = tiny.App()
-    r1.route("/a", handler=lambda req,resp: "A")
-    r1.route("/b", handler=lambda req,resp: "B")
-    r2.route("/c", handler=lambda req,resp: "C")
-    r2.route("/d", handler=lambda req,resp: "D")
-    app.mount('/pfx', r1)
-    app.mount('/fpx', r2)
-    r1.mount('/alias/', r2)
-    self.assertProducesResponse(app, "/a", 404)
-    self.assertProducesResponse(app, "/pfx", 404)
-    self.assertProducesResponse(app, "/pfx/", 404)
-    self.assertProducesResponse(app, "/pfx/c", 404)
-    self.assertProducesResponse(app, "/pfx/a", 200, "A")
-    self.assertProducesResponse(app, "/pfx/b", 200, "B")
-    self.assertProducesResponse(app, "/fpx/c", 200, "C")
-    self.assertProducesResponse(app, "/fpx/d", 200, "D")
-    self.assertProducesResponse(app, "/pfx/alias/c", 200, "C")
-
-  def test_bind_router_deep(self):
-    """Make sure that binding nested routers works even if there's lots of them."""
-    DEPTH = 60  # 100 is our depth max at the moment; not guarateed to be constant
-
-    # with Nodes along the way
-    r = app = tiny.App()
-    r.route("/_node", handler=lambda req, resp: "Node: 0")
-    for i in range(DEPTH):
-      rnext = tiny.Router()
-      rnext.route("/_node", handler=lambda req, resp: "Node: %i" % (i))
-      r.mount("/x", rnext)
-      r = rnext
-    for i in range(DEPTH):
-      url = "/".join([''] + ["x"] * i + ['_node'])
-      self.assertProducesResponse(app, url, 200, "Node: %i" % (i), msg="Node %i" % (i))
-
-    # without nodes along the way
-    r = app = tiny.App()
-    for i in range(DEPTH):
-      rnext = tiny.Router()
-      r.mount("/x", rnext)
-      r = rnext
-    r.route("/_node", handler=lambda req, resp: "Node: %i" % (DEPTH))
-    url = "/".join([''] + ["x"] * DEPTH + ['_node'])
-    self.assertProducesResponse(app, url, 200, "Node: %i" % (DEPTH))
-
-  def test_bind_router_loop(self):
-    """Make sure we crash out with a self-referential bind loop."""
-    # Note: if this goes poorly, there's a chance of an infinite loop on this test.
-    app = tiny.App()
-    app.mount("/", app)
-    app.tracebacks_to_stderr = False
-    self.assertProducesResponse(app, "/", 500)
-
-  def test_route_kwargs(self):
-    handler = lambda req,rsp: " ".join("[%s]=[%s]" % (k,req.kwargs[k]) for k in sorted(req.kwargs))
-    app = tiny.App()
-    app.route("/a/{aa}", handler=handler)
-    app.route("/a/{aa}/{bb}.html", handler=handler)
-    app.route("/a/{aa}/{cc}.zip", handler=handler)
-    app.route(r"^/b/(?P<dd>[^/]+)/(?P<whatever>.*)", handler=handler)
-    app.route("/c/{aa:ba.}/", handler=handler)
-    app.route("/d/{zz:.*}", handler=handler)
-
-    self.assertProducesResponse(app, "/a/", 404)
-    self.assertProducesResponse(app, "/a/hello", 200, "[aa]=[hello]")
-    self.assertProducesResponse(app, "/a/world/", 404)
-    self.assertProducesResponse(app, "/a/hello/world.html", 200, "[aa]=[hello] [bb]=[world]")
-    self.assertProducesResponse(app, "/a/hello/world.zip", 200, "[aa]=[hello] [cc]=[world]")
-    self.assertProducesResponse(app, "/b/what/ev/er...", 200, "[dd]=[what] [whatever]=[ev/er...]")
-
-    self.assertProducesResponse(app, "/c/bar/", 200, "[aa]=[bar]")
-    self.assertProducesResponse(app, "/c/foo/", 404)
-    self.assertProducesResponse(app, "/d/foo/bar/baz", 200, "[zz]=[foo/bar/baz]")
-
-
-  def test_kwargs_with_bind(self):
-    handler = lambda req,rsp: " ".join("[%s]=[%s]" % (k,req.kwargs[k]) for k in sorted(req.kwargs))
-    app = tiny.App()
-    r1, r2, r3, r4 = (tiny.Router() for x in range(4))
-    r1.route("/{r1}/txt", handler=handler)
-    r2.route("/{r2}/", handler=handler)
-    r3.route("/{r3}", handler=handler)
-    r4.route("/four", handler=handler)
-    app.mount("/r1a/{base}/", r1)
-    app.mount("/r1b/{r1}/", r1)
-    app.mount("/r2/{base}/", r2)
-    app.mount("/r2a/{base}", r2)
-    app.mount("/r3/{base}/", r3)
-    app.mount("/r4/{base}/", r4)
-    app.mount("/r2b", r2)
-
-    self.assertProducesResponse(app, "/r1a/x1/x2/txt", 200, "[base]=[x1] [r1]=[x2]", "basic")
-    self.assertProducesResponse(app, "/r1b/x1/x2/txt", 200, "[r1]=[x2]", "mounted entry overrides")
-    self.assertProducesResponse(app, "/r2/x1/x2/", 200, "[base]=[x1] [r2]=[x2]", "with trailing slash")
-    self.assertProducesResponse(app, "/r2/x1/x2", 404, msg="called without trailing slash")
-    self.assertProducesResponse(app, "/r3/x1/x2", 200, "[base]=[x1] [r3]=[x2]", "trailing slash on mounted")
-    self.assertProducesResponse(app, "/r3/x1/x2/", 404, msg="trailing slash inappropraite")
-    self.assertProducesResponse(app, "/r2a/x1/x2/", 200, "[base]=[x1] [r2]=[x2]", "base trailing slash implicit")
-    self.assertProducesResponse(app, "/r4/x1/four", 200, "[base]=[x1]", "no kw on mounted")
-    self.assertProducesResponse(app, "/r4/x1/four", 200, "[base]=[x1]", "no kw on mounted")
-    self.assertProducesResponse(app, "/r2b/x1/", 200, "[r2]=[x1]", "no kw on base")
 
 class RequestTest(base.TinyAppTestBase):
   def test_kwargs(self):
@@ -298,9 +194,6 @@ class ResponseTest(base.TinyAppTestBase):
     self.assertEqual("text/html; charset=utf-8", r_def.headers_dict['content-type'])
     self.assertEqual("text/poem", r_alt.headers_dict['content-type'])
 
-
-# TODO: json response, file response, encoding
-
 class HandlingTest(base.TinyAppTestBase):
   def test_http_error(self):
     app = tiny.App()
@@ -332,3 +225,47 @@ class HandlingTest(base.TinyAppTestBase):
     app.tracebacks_to_http = True
     resp = base.Request("/err").get_response(app)
     self.assertIn(SENTINEL, resp.output_str())
+
+class RequestForwardTest(base.TinyAppTestBase):
+  def test_wsgi_forward(self):
+    app1 = tiny.App()
+    app2 = tiny.App()
+
+    @app1.route("/")
+    def _1(req, resp):
+      resp = req.forward_wsgi(app2)
+      resp.headers["App1"] = "OK"
+      return resp
+
+    @app2.route("/")
+    def _2(req, resp):
+      resp.headers["App2"] = "OK"
+      return "Hello App 2"
+
+    resp = base.Request("/").get_response(app1)
+    self.assertResponse(resp, 200, "Hello App 2")
+    self.assertDictFuzzy({"App1":"OK", "App2":"OK"}, resp.headers_dict)
+
+  def test_app_forward(self):
+    app1 = tiny.App()
+    app2 = tiny.App()
+
+    @app1.route("/")
+    def _1(req, resp):
+      resp = req.forward(app2)
+      resp.headers["App1"] = "OK"
+      return resp
+
+    @app2.route("/")
+    def _2(req, resp):
+      resp.headers["App2"] = "OK"
+      return "Hello App 2"
+
+    resp = base.Request("/").get_response(app1)
+    self.assertResponse(resp, 200, "Hello App 2")
+    self.assertDictFuzzy({"App1":"OK", "App2":"OK"}, resp.headers_dict)
+
+
+# TODO: json response, file response, encoding
+
+

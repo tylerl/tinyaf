@@ -53,11 +53,6 @@ class Router(object):
       return decorator(handler)
     return decorator
 
-  def mount(self, path, router):
-    if not path.startswith("^"):
-      path = self._escape("/" + path + "/", partial=True)
-    self.routes.append((path, router, []))
-
   @staticmethod
   def _escape(val, partial=False):
     """Encode non-regex patterns as regex."""
@@ -85,12 +80,26 @@ class Request(object):
     self.path = environ['PATH_INFO']
     self.method = environ['REQUEST_METHOD']
     self.fieldstorage = cgi.FieldStorage(environ=environ, fp=environ.get('wsgi.input', None))
+    self.route_matched = None
     try:
       self.fields = {k: self.fieldstorage[k].value for k in self.fieldstorage}
     except TypeError:
       self.fields = {}
     hlist = [(k[5:].replace("_","-").title(), v) for k, v in environ.items() if k.startswith("HTTP_")]
     self.headers = wsgiref.headers.Headers(hlist)
+
+  def forward(self, app, trim_path=False):
+    return app.process_request(self)
+
+  def forward_wsgi(self, application):
+    self.__response = None  # place to stick the response object in callback, else we lose it.
+    def start_response(statusline, headers):
+      code, status = statusline.split(" ", 1)
+      self.__response = Response(content=None, code=int(code), headers=headers, status=status)
+    content = application(self.environ, start_response)
+    if not self.__response: raise AssertionError("start_response not called.")
+    self.__response.content = content
+    return self.__response
 
   def __getitem__(self, key):
     try: return self.kwargs[key]
@@ -99,6 +108,7 @@ class Request(object):
   def __contains__(self, key):
     return key in self.kwargs or key in self.fields
 
+
 class Response(object):
   """Response contains the status, headers, and content of an HTTP response.
   You return a Response object in your request handler. """
@@ -106,6 +116,7 @@ class Response(object):
   def __init__(self, content=None, code=200, headers=None, **kwargs):
     self._default_headers = {}
     self.content = content or []
+    self.status = kwargs.get('status', None)
     self.code = code
     headers = headers or []
     self.headers = wsgiref.headers.Headers(list(getattr(headers, 'items', lambda: headers)()))
@@ -113,18 +124,18 @@ class Response(object):
   def write(self, *content):
     self.content.extend(content)
 
+  def finalize(self):
+    pass
+
   def _towsgi(self, start_response):
     content = self.finalize() or self.content or []
     self.code = self.code or 500
     for h, v in self._default_headers.items(): self.headers.setdefault(h, str(v))
-    start_response("%i %s" % (self.code, self.http_status()[0]), list(self.headers.items()))
+    start_response("%i %s" % (self.code, self.status or self.http_status()[0]), list(self.headers.items()))
     return content
 
   def http_status(self):
     return _http_status(self.code)
-
-  def finalize(self):
-    pass
 
 
 class StringResponse(Response):
@@ -206,15 +217,10 @@ class App(Router):
     """Top-level request handler. Override to intercept every request."""
     url = request.path
     router = self.router
-    for _ in range(100):  # TTL sanity check
-      fn, matched, kwargs = self._lookup_route(url, request.method, router)
-      if not isinstance(fn, Router):
-        request.kwargs.update(kwargs)
-        return fn(request, response)
-      request.kwargs.update(kwargs)
-      url = "/" + url[len(matched):].lstrip("/")
-      router = fn
-    raise ValueError("Recursion limit hit on route lookup.")
+    fn, matched, kwargs = self._lookup_route(url, request.method, router)
+    request.kwargs.update(kwargs)
+    request.route_matched = matched
+    return fn(request, response)
 
   def _lookup_route(self, url, method, router=None):
     """Figure out which URL matches."""
@@ -257,9 +263,9 @@ class App(Router):
 
   def __call__(self, environ, start_response):
     """WSGI entrypoint."""
-    return self._process_request(Request(environ))._towsgi(start_response)
+    return self.process_request(Request(environ))._towsgi(start_response)
 
-  def _process_request(self, request):
+  def process_request(self, request):
     """Call the base request handler and get a response."""
     return self._get_response_handled(self.request_handler, request, StringResponse())
 
