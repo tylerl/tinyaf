@@ -80,7 +80,7 @@ class Request(object):
     expecting_reponse = False
     if not resp_info:  # Make sure start_reponse was called before return
       raise RequestFailure("start_response not called before handler returned")
-    outlist = list(out)  # coelesce down to list
+    outlist = list(iter(out))  # coelesce down to list
     # WSGI expects byte type only; no objects, unicode, iterators, etc.
     if not all(type(x) == BYTE_TYPE for x in outlist):
       types = list(set(type(x).__name__ for x in outlist))
@@ -128,6 +128,9 @@ class TinyAppTestBase(unittest.TestCase):
       except KeyError:
         pass
     self.assertEqual(subset, dictionaryFiltered, msg)
+
+  def assertResponseHeaders(self, resp, headers_dict, msg=None):
+    return self.assertDictFuzzy(headers_dict, resp.headers_dict, msg)
 
   def assertResponse(self, resp, code, content=None, msg=None):
     if code != resp.code:

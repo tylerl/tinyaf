@@ -1,34 +1,22 @@
 import cgi
-import fnmatch
-import functools
 import json
 import mimetypes
 import os
 import re
 import sys
 import traceback
-import types
 import wsgiref.headers
 import wsgiref.simple_server
-try:
-  import socketserver  # py3
+if sys.version_info[0]==2:  # py2
+  import SocketServer as socketserver
+  import httplib  # pylint: disable=E0401
+else:  # py3
+  import socketserver
   import http
-  def _http_status(code):
-    try:
-      s = http.HTTPStatus(code); return s.phrase, s.description  # pylint: disable=E1120
-    except ValueError: return "Unknown", ""
-except ImportError:
-  import SocketServer as socketserver  # py2
-  import httplib
-  def _http_status(code):
-    return httplib.responses.get(code, 'Unknown')
 
 #############################################################################
 ## TODO:
 #   * Simplified Router class that just saves a dict per route in the list
-#   * Add wsgi-compatible sub-request processing to req/resp/app framework
-#   * Get rid of bind routing (replaced by above)
-#   * Modify FileResponse to use wsgi.file_wrapper
 
 
 class Router(object):
@@ -54,7 +42,7 @@ class Router(object):
     return decorator
 
   @staticmethod
-  def _escape(val, partial=False):
+  def _escape(val):
     """Encode non-regex patterns as regex."""
     esc = lambda s: re.escape(re.sub("//+", "/", s))
     def it(val):
@@ -63,19 +51,16 @@ class Router(object):
       for m in re.finditer(r'({([a-zA-Z0-9\.]+)(?::((?:\\.|[^}])*))?})|(\*)', val):
         if m.start() > i: yield esc(val[i:m.start()])
         if m.group() == "*": yield r"[^/]+"
-        else:
-          yield "(?P<%s>%s)" % (m.groups()[1], m.groups()[2] or r'[^/]+')
+        else: yield "(?P<%s>%s)" % (m.groups()[1], m.groups()[2] or r'[^/]+')
         i = m.end()
       if i < len(val): yield esc(val[i:])
-      if not partial: yield "$"
+      yield "$"
     return "".join(it(val))
 
 
 class Request(object):
-  """Request encapsulates the HTTP request info sent to your handler."""
-
-  def __init__(self, environ):
-    self.kwargs = {}  # updated when routing decision is calcuated
+  def __init__(self, environ, url_args=None):
+    self.url_args = url_args or {}  # updated when routing decision is calcuated
     self.environ = environ
     self.path = environ['PATH_INFO']
     self.method = environ['REQUEST_METHOD']
@@ -88,10 +73,11 @@ class Request(object):
     hlist = [(k[5:].replace("_","-").title(), v) for k, v in environ.items() if k.startswith("HTTP_")]
     self.headers = wsgiref.headers.Headers(hlist)
 
-  def forward(self, app, trim_path=False):
-    return app.process_request(self)
-
-  def forward_wsgi(self, application):
+  def forward(self, application, env_update=None, force_wsgi=False):
+    environ = self.environ.copy()
+    if env_update: environ.update(env_update)
+    if hasattr(application,'process_request') and not force_wsgi:
+      return application.process_request(Request(environ, self.url_args.copy()))
     self.__response = None  # place to stick the response object in callback, else we lose it.
     def start_response(statusline, headers):
       code, status = statusline.split(" ", 1)
@@ -102,18 +88,16 @@ class Request(object):
     return self.__response
 
   def __getitem__(self, key):
-    try: return self.kwargs[key]
+    try: return self.url_args[key]
     except KeyError: return self.fields[key]
 
   def __contains__(self, key):
-    return key in self.kwargs or key in self.fields
+    return key in self.url_args or key in self.fields
 
 
 class Response(object):
-  """Response contains the status, headers, and content of an HTTP response.
-  You return a Response object in your request handler. """
-
   def __init__(self, content=None, code=200, headers=None, **kwargs):
+    self.response_instance = self  # override to send another class as the response instance
     self._default_headers = {}
     self.content = content or []
     self.status = kwargs.get('status', None)
@@ -121,21 +105,30 @@ class Response(object):
     headers = headers or []
     self.headers = wsgiref.headers.Headers(list(getattr(headers, 'items', lambda: headers)()))
 
-  def write(self, *content):
-    self.content.extend(content)
+  def write(self, content):
+    self.content.append(content)
+
+  def _finalize_wsgi(self, environ, start_response):
+    self.environ = environ
+    self.start_response = start_response
+    self.content = self.finalize() or self.content or []
+    self.code = self.code or 500
+    for h, v in self._default_headers.items(): self.headers.setdefault(h, str(v))
+    self.start_response("%i %s" % (self.code, self.status or self.http_status()[0]), list(self.headers.items()))
 
   def finalize(self):
     pass
 
-  def _towsgi(self, start_response):
-    content = self.finalize() or self.content or []
-    self.code = self.code or 500
-    for h, v in self._default_headers.items(): self.headers.setdefault(h, str(v))
-    start_response("%i %s" % (self.code, self.status or self.http_status()[0]), list(self.headers.items()))
-    return content
+  def __iter__(self):
+    return iter(self.content)
 
   def http_status(self):
-    return _http_status(self.code)
+    if sys.version_info[0]==2:
+      return httplib.responses.get(self.code, 'Unknown')
+    else:
+      try:
+        s = http.HTTPStatus(self.code); return s.phrase, s.description  # pylint: disable=E1120
+      except ValueError: return "Unknown", ""
 
 
 class StringResponse(Response):
@@ -160,6 +153,9 @@ class JsonResponse(StringResponse):
     kwargs.setdefault('content_type', 'application/json')
     StringResponse.__init__(self, **kwargs)
 
+  def write(self, val):
+    self.val = val
+
   def finalize(self):
     self.content = (json.dumps(self.val, sort_keys=self.sort_keys, **self.json_args),)
     return StringResponse.finalize(self)
@@ -168,7 +164,7 @@ class JsonResponse(StringResponse):
 class FileResponse(Response):
   def __init__(self, file, content_type=None, close=True, **kwargs):
     Response.__init__(self, **kwargs)
-    self.close = close
+    self._close = close
     if not hasattr(file, 'read'):
       file = open(file, 'rb')
     if not content_type and hasattr(file, 'name'):
@@ -179,16 +175,17 @@ class FileResponse(Response):
       self._default_headers['content-length'] = "%i" % (
           os.fstat(file.fileno()).st_size)
     self.file = file
-    self.content = self.readandclose()  # content iterator, not list
 
-  def readandclose(self):
-    while True:
-      dat = self.file.read(8192)
-      if not dat:
-        break
-      yield dat
-    if self.close:
+  def finalize(self):
+    if 'wsgi.file_wrapper' in self.environ:
+      self.response_instance = self.environ['wsgi.file_wrapper'](self.file, 32768)
+
+  def close(self):
+    if self._close and hasattr(self.file, 'close'):
       self.file.close()
+
+  def __iter__(self):
+    return iter(lambda: self.file.read(32768), '')
 
 
 class HttpError(Exception, StringResponse):
@@ -200,6 +197,7 @@ class HttpError(Exception, StringResponse):
 
 
 class App(Router):
+  ResponseClass = StringResponse
   def __init__(self, router=None):
     self.router = router or Router()
     self.tracebacks_to_http = False
@@ -217,8 +215,8 @@ class App(Router):
     """Top-level request handler. Override to intercept every request."""
     url = request.path
     router = self.router
-    fn, matched, kwargs = self._lookup_route(url, request.method, router)
-    request.kwargs.update(kwargs)
+    fn, matched, url_args = self._lookup_route(url, request.method, router)
+    request.url_args.update(url_args)
     request.route_matched = matched
     return fn(request, response)
 
@@ -235,9 +233,7 @@ class App(Router):
           continue
         return fn, match.group(0), match.groupdict()
     if methods_allowed:
-      raise HttpError(
-          405,
-          headers={'Allow': ",".join(methods_allowed)})
+      raise HttpError(405, headers={'Allow': ",".join(methods_allowed)})
     raise HttpError(404)
 
   def error_handler(self, request, http_error):
@@ -251,7 +247,7 @@ class App(Router):
       return
     if self.tracebacks_to_http and hasattr(http_error, 'traceback'):
       http_error.headers['Content-type'] = 'text/plain'
-      http_error.write("An error occurred:\n\n", http_error.traceback)
+      http_error.write("An error occurred:\n\n %s" % (http_error.traceback))
       return
     http_error.headers['Content-type'] = 'text/html'
     phrase, description = http_error.http_status()
@@ -263,11 +259,13 @@ class App(Router):
 
   def __call__(self, environ, start_response):
     """WSGI entrypoint."""
-    return self.process_request(Request(environ))._towsgi(start_response)
+    resp = self.process_request(Request(environ))
+    resp._finalize_wsgi(environ, start_response)
+    return resp.response_instance
 
   def process_request(self, request):
     """Call the base request handler and get a response."""
-    return self._get_response_handled(self.request_handler, request, StringResponse())
+    return self._get_response_handled(self.request_handler, request, self.ResponseClass())
 
   def _get_response(self, fn, request, response):
     """Sort out the response/result ambiguity, and return the response."""
@@ -293,16 +291,12 @@ class App(Router):
       return self._get_response(self.error_handler, request, http_error)
 
   def make_server(self, port=8080, host='', threaded=True):
-    sc = ThreadedWSGIServer if threaded else wsgiref.simple_server.WSGIServer
-    return wsgiref.simple_server.make_server(host, port, self, server_class=sc)
+    svr = wsgiref.simple_server.WSGIServer
+    if threaded:  # Add threading mix-in
+      svr = type('ThreadedServer', (socketserver.ThreadingMixIn, svr), {'daemon_threads': True})
+    return wsgiref.simple_server.make_server(host, port, self, server_class=svr)
 
   def serve_forever(self, port=8080, host='', threaded=True):
     print("Serving on %s:%s -- ctrl+c to quit." % (host, port))
     try: self.make_server(port, host, threaded).serve_forever()
     except KeyboardInterrupt: pass
-
-
-class ThreadedWSGIServer(socketserver.ThreadingMixIn,
-                          wsgiref.simple_server.WSGIServer):
-  """Simple WSGI server with threading mixin"""
-  daemon_threads = True

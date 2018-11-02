@@ -7,7 +7,6 @@ app = tiny.App()
 
 @app.route("/dump.{fmt:(txt|json)}")
 def dump_request(req, resp):
-  resp.content_type = "text/plain"
   out = dict(
     environ={k:v for k,v in req.environ.items() if isinstance(v,str)},
     fields=req.fields,
@@ -19,6 +18,7 @@ def dump_request(req, resp):
   fmt = req.kwargs.get('fmt','txt')
   if fmt == 'json':
     return tiny.JsonResponse(out)
+
   if fmt == 'txt':
     resp.content_type = 'text/plain'
     pprint.pprint(out, stream=resp)

@@ -105,11 +105,11 @@ class RouteTest(base.TinyAppTestBase):
 
 
 class RequestTest(base.TinyAppTestBase):
-  def test_kwargs(self):
+  def test_url_args(self):
     app = tiny.App()
     @app.route("/api/{ver:v\d+}/get/{kind}/{id:\d+}")  # pylint: disable=W1401
     def _(req, resp):
-      return tiny.JsonResponse(req.kwargs)
+      return tiny.JsonResponse(req.url_args)
     self.assertProducesJson(app, "/api/v2/get/fish/37", dict(id='37', kind='fish', ver='v2'))
 
   def test_fields_formurl(self):
@@ -228,23 +228,21 @@ class HandlingTest(base.TinyAppTestBase):
 
 class RequestForwardTest(base.TinyAppTestBase):
   def test_wsgi_forward(self):
-    app1 = tiny.App()
-    app2 = tiny.App()
+    app = tiny.App()
 
-    @app1.route("/")
-    def _1(req, resp):
-      resp = req.forward_wsgi(app2)
+    def wsgi_app(environ, start_response):
+      start_response("200 OK", [("content-type", "text/plain"), ("App2", "OK")])
+      return ["Hello WSGI".encode('utf-8')]
+
+    @app.route("/")
+    def _(req, resp):
+      resp = req.forward(wsgi_app)
       resp.headers["App1"] = "OK"
       return resp
 
-    @app2.route("/")
-    def _2(req, resp):
-      resp.headers["App2"] = "OK"
-      return "Hello App 2"
-
-    resp = base.Request("/").get_response(app1)
-    self.assertResponse(resp, 200, "Hello App 2")
-    self.assertDictFuzzy({"App1":"OK", "App2":"OK"}, resp.headers_dict)
+    resp = base.Request("/").get_response(app)
+    self.assertResponse(resp, 200, "Hello WSGI")
+    self.assertResponseHeaders(resp, {"App1":"OK", "App2":"OK"})
 
   def test_app_forward(self):
     app1 = tiny.App()
@@ -263,9 +261,39 @@ class RequestForwardTest(base.TinyAppTestBase):
 
     resp = base.Request("/").get_response(app1)
     self.assertResponse(resp, 200, "Hello App 2")
-    self.assertDictFuzzy({"App1":"OK", "App2":"OK"}, resp.headers_dict)
+    self.assertResponseHeaders(resp, {"App1":"OK", "App2":"OK"})
 
 
-# TODO: json response, file response, encoding
+class JsonAppTest(base.TinyAppTestBase):
+  def test_json_resp(self):
+    app = tiny.App()
+    app.ResponseClass = tiny.JsonResponse
+
+    @app.route("/")
+    def _(req, resp):
+      resp.headers['Foo'] = "Bar"
+      resp.val = {"hello": "world"}
+
+    resp = base.Request("/").get_response(app)
+    self.assertJsonResponse(resp, {"hello": "world"})
+    self.assertResponseHeaders(resp, {"Foo":"Bar"})
+
+  def test_json_return(self):
+    app = tiny.App()
+    app.ResponseClass = tiny.JsonResponse
+
+    @app.route("/")
+    def _(req, resp):
+      return {"hello": "world"}
+
+    resp = base.Request("/").get_response(app)
+    self.assertJsonResponse(resp, {"hello": "world"})
+
+
+# TODO:
+# * specific details of request forwarding,
+# * json response,
+# * file response,
+# * encoding
 
 
