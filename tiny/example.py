@@ -4,47 +4,57 @@ from . import tiny
 
 app = tiny.App()
 
+
 @app.route(r'/')
 def home(req, resp):
-  return "<html><h1>Hello World</h1></html>"
+    return "<html><h1>Hello World</h1></html>"
+
 
 @app.route(r'^/sleep/(\d+)$')
 def sleepy_dave(req, resp):
-  import time
-  time.sleep(int(req.args[0]))
-  return "Slept %i sec" % (int(req.args[0]))
+    import time
+    time.sleep(int(req.args[0]))
+    return "Slept %i sec" % (int(req.args[0]))
+
 
 @app.route(r'/crash')
 def crashy(req, resp):
-  raise Exception("BOOM")
+    raise Exception("BOOM")
+
 
 fh = tiny.Router()
+
+
 @fh.route("/")
 def dirlist(req, resp):
-  for f in os.listdir():
-    if not f.startswith(".") and os.path.isfile(f):
-      resp.append("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
+    for f in os.listdir():
+        if not f.startswith(".") and os.path.isfile(f):
+            resp.append("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
+
 
 @fh.route(r'^/([^/.][^/]*)$')
 def files(req, resp):
-  if not os.path.exists(req.args[0]):
-    raise tiny.HttpError(404)
-  return tiny.FileResponse(req.args[0])
+    if not os.path.exists(req.args[0]):
+        raise tiny.HttpError(404)
+    return tiny.FileResponse(req.args[0])
 
-app.route("/files")(lambda a,b: tiny.Response('',302,{'location':'/files/'}))
+
+app.route("/files")(lambda a, b: tiny.Response('', 302, {'location': '/files/'}))
 app.mount("/files/", fh)
 
+
 def run():
-  app.tracebacks_to_http = True
-  server = app.make_server()
-  print("Running on %s:%s. Ctrl+C to exit." % server.server_address)
-  try:
-    server.serve_forever()
-  except KeyboardInterrupt:
-    pass
+    app.tracebacks_to_http = True
+    server = app.make_server()
+    print("Running on %s:%s. Ctrl+C to exit." % server.server_address)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
 
 if __name__ == "__main__":
-  run()
+    run()
 
 ###################################################
 # SCRATCH

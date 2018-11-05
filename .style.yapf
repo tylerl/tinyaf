@@ -1,4 +1,12 @@
-[yapf]
-based_on_style = chromium
+[style]
+based_on_style = pep8
+column_limit = 100
+
 blank_line_before_nested_class_or_def = False
-max_line_length = 100
+JOIN_MULTIPLE_LINES = True
+BLANK_LINE_BEFORE_MODULE_DOCSTRING = False
+BLANK_LINE_BEFORE_CLASS_DOCSTRING = False
+BLANK_LINES_AROUND_TOP_LEVEL_DEFINITION = 2
+COALESCE_BRACKETS = False
+CONTINUATION_ALIGN_STYLE = Fixed
+CONTINUATION_INDENT_WIDTH = 4
