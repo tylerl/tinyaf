@@ -14,21 +14,22 @@ else:  # py3
     import socketserver
     import http
 
+# TODO: Switch pattern fr /foo/{bar}/baz  to  /foo/<bar>/baz and /foo/<bar:.*>/baz
 
 class Router(object):
     def __init__(self):
         self.entries = []
         self.apps = []
 
-    def router_update(self, **kwargs):
+    def _router_update(self, **kwargs):
         self.entries.append(kwargs.copy())
         for app in self.apps:
-            app.router_update(**kwargs)
+            app._router_update(**kwargs)
 
     def route(self, path, handler=None, methods=None, **kwargs):  # additional: response_class, vars
         kwargs.update(dict(routetype='route', path=path, methods=methods))
         def decorator(fn):
-            self.router_update(handler=fn, **kwargs)
+            self._router_update(handler=fn, **kwargs)
             return fn
         if handler:
             return decorator(handler)
@@ -37,7 +38,7 @@ class Router(object):
     def errorhandler(self, code, handler=None, **kwargs):  # additional: vars
         kwargs.update(dict(routetype='errorhandler', code=code))
         def decorator(fn):
-            self.router_update(handler=fn, **kwargs)
+            self._router_update(handler=fn, **kwargs)
             return fn
         if handler: return decorator(handler)
         return decorator
@@ -45,12 +46,12 @@ class Router(object):
 
 class Request(object):
     def __init__(self, environ):
-        self.vars = {}  # updated when routing decision is calcuated
+        self.vars = {}  # populated when the routing decision is calcuated
+        self.route_path = ""  # updated to contain the path string that matched the routing regex
         self.environ = environ
         self.path = environ['PATH_INFO']
         self.method = environ['REQUEST_METHOD']
         self.fieldstorage = cgi.FieldStorage(environ=environ, fp=environ.get('wsgi.input', None))
-        self.route_path = ""
         self.fields = {k: self.fieldstorage[k].value
                        for k in self.fieldstorage} if self.fieldstorage.list else {}
         hlist = [(k[5:].replace("_", "-").title(), v) for k, v in environ.items()
@@ -84,11 +85,11 @@ class Request(object):
 class Response(object):
     def __init__(self, content=None, code=200, headers=None, **kwargs):
         self.response_instance = self  # override to send another class as the response instance
-        self._default_headers = {}
+        self._default_headers = {}  # Headers that will apply if no competing headers are set
         self.content = content or []
         self.status = kwargs.get('status', None)
         self.code = code
-        headers = headers or []
+        headers = headers or []  # headers can be either a list of tuples or a dict
         self.headers = wsgiref.headers.Headers(list(getattr(headers, 'items', lambda: headers)()))
 
     def _finalize_wsgi(self, environ, start_response):
@@ -152,6 +153,7 @@ class JsonResponse(StringResponse):
 
 
 class FileResponse(Response):
+    chunk_size = 32768
     def __init__(self, file, content_type=None, close=True, **kwargs):
         Response.__init__(self, **kwargs)
         self._close = close
@@ -167,14 +169,14 @@ class FileResponse(Response):
 
     def finalize(self):
         if 'wsgi.file_wrapper' in self.environ:
-            self.response_instance = self.environ['wsgi.file_wrapper'](self.file, 32768)
+            self.response_instance = self.environ['wsgi.file_wrapper'](self.file, self.chunk_size)
 
     def close(self):
         if self._close and hasattr(self.file, 'close'):
             self.file.close()
 
     def __iter__(self):
-        return iter(lambda: self.file.read(32768), '')
+        return iter(lambda: self.file.read(self.chunk_size), '')
 
 
 class HttpError(Exception, StringResponse):
@@ -206,10 +208,10 @@ class App(Router):
         if router:
             router.apps.append(self)
             for d in router.entries:
-                self.router_update(**d)
+                self._router_update(**d)
 
     ### Routing ###
-    def router_update(self, routetype, **kwargs):
+    def _router_update(self, routetype, **kwargs):
         if routetype == 'route':
             kwargs['pattern'] = re.compile(self._route_escape(kwargs['path']))
             self.routes.append(Item(kwargs))
@@ -325,8 +327,7 @@ class App(Router):
     def make_server(self, port=8080, host='', threaded=True):
         svr = wsgiref.simple_server.WSGIServer
         if threaded:  # Add threading mix-in
-            svr = type('ThreadedServer', (socketserver.ThreadingMixIn, svr),
-                       {'daemon_threads': True})
+            svr = type('ThreadedServer', (socketserver.ThreadingMixIn, svr), {'daemon_threads': True})
         return wsgiref.simple_server.make_server(host, port, self, server_class=svr)
 
     def serve_forever(self, port=8080, host='', threaded=True):
