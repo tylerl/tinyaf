@@ -37,7 +37,9 @@ def _copy_docs(a, b):
       continue
     if type(a1) == type(b1) and type(a1) in (types.FunctionType, type):
       if hasattr(a1, '__doc__'):
-        b1.__doc__ = a1.__doc__
+        if not (sys.version_info[0]==2 and type(b1) == type):
+          # Py2 doesn't allow assigning docstrings for Classes
+          b1.__doc__ = a1.__doc__
       _copy_docs(a1, b1)
 _copy_docs(_tiny_doc, _tiny)
 

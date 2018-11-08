@@ -17,6 +17,7 @@ else:  # py3
 # TODO: Switch pattern fr /foo/{bar}/baz  to  /foo/<bar>/baz and /foo/<bar:.*>/baz
 
 class Router(object):
+    """Manage routes and error handlers in your application."""
     def __init__(self):
         self.entries = []
         self.apps = []
@@ -113,7 +114,7 @@ class Response(object):
 
     def http_status(self):
         if sys.version_info[0] == 2:
-            return httplib.responses.get(self.code, 'Unknown')
+            return httplib.responses.get(self.code, 'Unknown'), ""
         else:
             try:
                 s = http.HTTPStatus(self.code)  # pylint: disable=E1120
@@ -226,9 +227,9 @@ class App(Router):
         esc = lambda s: re.escape(re.sub("//+", "/", "/" + s))
 
         def it(val):
-            i = 0
-            yield "^"
-            for m in re.finditer(r'({([a-zA-Z0-9\.]+)(?::((?:\\.|[^}])*))?})|(\*)', val):
+            i = 0       # pattern below is "*" or "<identifier>" or "<identifier:regex>"
+            yield "^"   # complicated because escaping > is allowed ("<ident:foo\>bar>")
+            for m in re.finditer(r'(<([a-zA-Z0-9\.]+)(?::((?:\\.|[^>])*))?>)|(\*)', val):
                 if m.start() > i:
                     yield esc(val[i:m.start()])
                 if m.group() == "*":
