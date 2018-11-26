@@ -2,12 +2,12 @@ from __future__ import absolute_import
 
 import textwrap
 
-from . import base
+from . import testbase
 import tiny
 
 # pylint: disable=W1401
 
-class RouteTest(base.TinyAppTestBase):
+class RouteTest(testbase.TinyAppTestBase):
     def test_exact_route(self):
         """Verify non-regex routes aren't regex or prefix matched."""
         app = tiny.App()
@@ -77,14 +77,14 @@ class RouteTest(base.TinyAppTestBase):
         self.assertProducesResponse(app, "/g", 200, "/g@G", postdata=None)
         self.assertProducesResponse(app, "/p", 200, "/p@P", postdata='foo')
         # check headers
-        resp = base.Request('/g', postdata='foo').get_response(app)
+        resp = testbase.Request('/g', postdata='foo').get_response(app)
         self.assertResponse(resp, 405)
         self.assertEqual(resp.headers_dict['Allow'], 'GET')
-        resp = base.Request('/p', postdata=None).get_response(app)
+        resp = testbase.Request('/p', postdata=None).get_response(app)
         self.assertResponse(resp, 405)
         self.assertEqual(resp.headers_dict['Allow'], 'POST')
         # check multi-method header result
-        resp = base.Request('/', method='OPTIONS').get_response(app)
+        resp = testbase.Request('/', method='OPTIONS').get_response(app)
         self.assertResponse(resp, 405)
         self.assertEqual(resp.headers_dict['Allow'], 'GET,POST')
 
@@ -106,7 +106,7 @@ class RouteTest(base.TinyAppTestBase):
         self.assertProducesResponse(app, "/bar", 200, "C")
 
 
-class RequestTest(base.TinyAppTestBase):
+class RequestTest(testbase.TinyAppTestBase):
     def test_url_vars(self):
         app = tiny.App()
 
@@ -180,7 +180,7 @@ class RequestTest(base.TinyAppTestBase):
         self.assertProducesJson(app, "/foo/bar?baz", dict(method="GET", path="/foo/bar"))
 
 
-class ResponseTest(base.TinyAppTestBase):
+class ResponseTest(testbase.TinyAppTestBase):
     def test_write(self):
         app = tiny.App()
 
@@ -220,15 +220,15 @@ class ResponseTest(base.TinyAppTestBase):
                 resp.headers['content-type'] = req['ct']
             return "OK"
 
-        r_def = base.Request("/").get_response(app)
-        r_alt = base.Request("/?ct=text/poem").get_response(app)
+        r_def = testbase.Request("/").get_response(app)
+        r_alt = testbase.Request("/?ct=text/poem").get_response(app)
         self.assertResponse(r_def, 200, "OK")
         self.assertResponse(r_alt, 200, "OK")
         self.assertEqual("text/html; charset=utf-8", r_def.headers_dict['content-type'])
         self.assertEqual("text/poem", r_alt.headers_dict['content-type'])
 
 
-class HandlingTest(base.TinyAppTestBase):
+class HandlingTest(testbase.TinyAppTestBase):
     def test_http_error(self):
         app = tiny.App()
 
@@ -258,15 +258,15 @@ class HandlingTest(base.TinyAppTestBase):
             raise ValueError(SENTINEL)
 
         app.tracebacks_to_http = False
-        resp = base.Request("/err").get_response(app)
+        resp = testbase.Request("/err").get_response(app)
         self.assertNotIn(SENTINEL, resp.output_str())
 
         app.tracebacks_to_http = True
-        resp = base.Request("/err").get_response(app)
+        resp = testbase.Request("/err").get_response(app)
         self.assertIn(SENTINEL, resp.output_str())
 
 
-class RequestForwardTest(base.TinyAppTestBase):
+class RequestForwardTest(testbase.TinyAppTestBase):
     def test_wsgi_forward(self):
         app = tiny.App()
 
@@ -280,7 +280,7 @@ class RequestForwardTest(base.TinyAppTestBase):
             resp.headers["App1"] = "OK"
             return resp
 
-        resp = base.Request("/").get_response(app)
+        resp = testbase.Request("/").get_response(app)
         self.assertResponse(resp, 200, "Hello WSGI")
         self.assertResponseHeaders(resp, {"App1": "OK", "App2": "OK"})
 
@@ -299,12 +299,12 @@ class RequestForwardTest(base.TinyAppTestBase):
             resp.headers["App2"] = "OK"
             return "Hello App 2"
 
-        resp = base.Request("/").get_response(app1)
+        resp = testbase.Request("/").get_response(app1)
         self.assertResponse(resp, 200, "Hello App 2")
         self.assertResponseHeaders(resp, {"App1": "OK", "App2": "OK"})
 
 
-class JsonTest(base.TinyAppTestBase):
+class JsonTest(testbase.TinyAppTestBase):
     def test_json_details(self):
         app = tiny.App()
 

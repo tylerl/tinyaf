@@ -1,4 +1,8 @@
-#Contains the docstrings from tiny.py, keeping tiny.py short.
+"""TinyAF is an exceptionally small Web Application Framework for Python WSGI."""
+
+# _tiny_doc.py contains the docstrings from tiny.py, allowing us to spluge on
+# exhaustive documentation for when we need it, without dropping a massive
+# amount of content into everyone's copy-paste template.
 
 # pylint: disable=W1401
 
@@ -9,6 +13,11 @@ class Router(object):
 
         If `handler` is not provided, then this function returns a decorator which
         is expected to be applied to the URL handler.
+
+        Handlers have the signature `name(request, response):` where `request` is
+        a Request object, and `response` is derived from Response(). If your handler
+        returns a new Response object, then the provided one will be discarded.
+        Otherwise any content you return will be appended using response.write(...)
 
         Args:
             path: str
@@ -94,8 +103,29 @@ class Router(object):
             in ".html", because .* can match leading slashes.
         """
 
-    def errorhandler(self, code, handler=None, vars=None, **kwargs):  # additional: vars
-        pass
+    def errorhandler(self, code, handler=None, vars=None, **kwargs):
+        r"""Assign a handler function to a given status code.
+
+        If `handler` is not provided, then this function returns a decorator which
+        is expected to be applied to the URL handler.
+
+        The handler is associated with the numeric status code provided. Only
+        one handler is allowed per code, so a newly-assigned handler will replace
+        any existing handler for the same status code.
+
+        Handlers have the signature `name(request, error):` where `request` is
+        a Request object, and `error` is derived from HttpError(). Note that
+        HttpError is already derived from StringResponse, so error handlers neatly
+        parallel standard request handlers.
+
+        If your handler is triggered by an exception (other than just HttpError),
+        then error.exception will contain the original exception and error.traceback
+        will contain the traceback text.
+        
+        If your handler returns a new Response object, then the provided one
+        (the HttpError object) will be discarded. Otherwise any content you return
+        will be appended using error.write(...).
+        """
 
 class Request(object):
     """Request encapsulates the HTTP request info sent to your handler."""

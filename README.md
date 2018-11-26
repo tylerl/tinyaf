@@ -1,6 +1,6 @@
 # Tiny App Framework
 
-TinyAF is an exceptionally small Web Application Framework for Python WSGI.
+TinyAF is an _exceptionally_ small Web Application Framework for Python WSGI.
 
 This framework has no dependencies outside the standard library, and consists
 of only about 300 lines of code.
@@ -16,8 +16,8 @@ Because copy-paste deployment is the primary expected use case, tiny.py
 is highly optimized for code size. Each potential feature is balanced against
 the space required to code that feature. But the design is also intended to
 capture all the most important framework expectations, so that you don't
-miss the features you're missing from more comprehensive frameworks, like
-Flask, Django, or Bottle.
+really miss the features you're missing from more comprehensive frameworks,
+like Flask, Django, or Bottle.
 
 The intended result is that TinyAF is precisely as minimal an app framework as
 reasonably tolerable. If Django is a dump truck, Flask a motorcycle, and Bottle

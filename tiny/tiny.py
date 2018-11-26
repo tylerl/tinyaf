@@ -7,14 +7,13 @@ import sys
 import traceback
 import wsgiref.headers
 import wsgiref.simple_server
-if sys.version_info[0] == 2:  # py2
-    import SocketServer as socketserver
-    import httplib  # pylint: disable=E0401
+if sys.version_info[0] == 2:  # py2      # pylint disable import error due to python version
+    import SocketServer as socketserver  # pylint: disable=E0401
+    import httplib                       # pylint: disable=E0401
 else:  # py3
-    import socketserver
-    import http
+    import socketserver                  # pylint: disable=E0401
+    import http                          # pylint: disable=E0401
 
-# TODO: Switch pattern fr /foo/{bar}/baz  to  /foo/<bar>/baz and /foo/<bar:.*>/baz
 
 class Router(object):
     """Manage routes and error handlers in your application."""
@@ -32,8 +31,7 @@ class Router(object):
         def decorator(fn):
             self._router_update(handler=fn, **kwargs)
             return fn
-        if handler:
-            return decorator(handler)
+        if handler: return decorator(handler)
         return decorator
 
     def errorhandler(self, code, handler=None, **kwargs):  # additional: vars
@@ -46,30 +44,28 @@ class Router(object):
 
 
 class Request(object):
+    """Request objects contain all the information from the HTTP request."""
     def __init__(self, environ):
         self.vars = {}  # populated when the routing decision is calcuated
-        self.route_path = ""  # updated to contain the path string that matched the routing regex
+        self._route_match = None  # updated to contain the re match object from the routing decision 
         self.environ = environ
         self.path = environ['PATH_INFO']
         self.method = environ['REQUEST_METHOD']
         self.fieldstorage = cgi.FieldStorage(environ=environ, fp=environ.get('wsgi.input', None))
         self.fields = {k: self.fieldstorage[k].value
                        for k in self.fieldstorage} if self.fieldstorage.list else {}
-        hlist = [(k[5:].replace("_", "-").title(), v) for k, v in environ.items()
-                 if k.startswith("HTTP_")]
+        hlist = [(k[5:].replace("_", "-").title(), v) for k, v in environ.items() if k.startswith("HTTP_")]
         self.headers = wsgiref.headers.Headers(hlist)
 
     def forward(self, application, env=None):
         environ = self.environ.copy()
-        if env:
-            environ.update(env)
+        if env: environ.update(env)
         self.__response = None  # place to stick the response object in callback, else we lose it.
         def start_response(statusline, headers):
             code, status = statusline.split(" ", 1)
             self.__response = Response(content=None, code=int(code), headers=headers, status=status)
         content = application(self.environ, start_response)
-        if not self.__response:
-            raise AssertionError("start_response not called.")
+        if not self.__response: raise AssertionError("start_response not called.")
         self.__response.content = content
         return self.__response
 
@@ -84,8 +80,9 @@ class Request(object):
 
 
 class Response(object):
+    """Response objects manage translating your output to WSGI."""
     def __init__(self, content=None, code=200, headers=None, **kwargs):
-        self.response_instance = self  # override to send another class as the response instance
+        self.response_instance = self  # override to send another object as the wsgi response
         self._default_headers = {}  # Headers that will apply if no competing headers are set
         self.content = content or []
         self.status = kwargs.get('status', None)
@@ -124,6 +121,7 @@ class Response(object):
 
 
 class StringResponse(Response):
+    """A StringResponse manages string-to-bytes encoding for you."""
     def __init__(self, content=None, charset='utf-8', content_type='text/html', **kwargs):
         content = [content] if content else []
         Response.__init__(self, content=content, **kwargs)
@@ -138,6 +136,7 @@ class StringResponse(Response):
 
 
 class JsonResponse(StringResponse):
+    """A JsonResponse sends the provided val as JSON-encoded text."""
     def __init__(self, val=None, sort_keys=True, **kwargs):
         self.val = val
         self.sort_keys = sort_keys
@@ -154,6 +153,7 @@ class JsonResponse(StringResponse):
 
 
 class FileResponse(Response):
+    """A FileResponse sends raw files from your filesystem."""
     chunk_size = 32768
     def __init__(self, file, content_type=None, close=True, **kwargs):
         Response.__init__(self, **kwargs)
@@ -173,29 +173,18 @@ class FileResponse(Response):
             self.response_instance = self.environ['wsgi.file_wrapper'](self.file, self.chunk_size)
 
     def close(self):
-        if self._close and hasattr(self.file, 'close'):
-            self.file.close()
+        if self._close and hasattr(self.file, 'close'): self.file.close()
 
     def __iter__(self):
         return iter(lambda: self.file.read(self.chunk_size), '')
 
 
 class HttpError(Exception, StringResponse):
-    """HttpError triggers your handle_STATUS handler if one is set."""
+    """HttpError is a Response that you throw; it also invokes status handlers."""
 
     def __init__(self, code=500, content="", **kwargs):
         Exception.__init__(self, "HTTP %i" % (code))
         StringResponse.__init__(self, content, code=code, **kwargs)
-
-
-class Item(object):  # Generic dict->object, used for routes
-    def __init__(self, d):
-        for k, v in d.items():
-            setattr(self, k, v)
-
-    def __getattr__(self, k):
-        if k[0] == '_':
-            raise AttributeError(k)
 
 
 class App(Router):
@@ -211,13 +200,13 @@ class App(Router):
             for d in router.entries:
                 self._router_update(**d)
 
-    ### Routing ###
+    ### Routing ###########################################
     def _router_update(self, routetype, **kwargs):
         if routetype == 'route':
             kwargs['pattern'] = re.compile(self._route_escape(kwargs['path']))
-            self.routes.append(Item(kwargs))
+            self.routes.append(kwargs.copy())
         elif routetype == 'errorhandler':
-            self.errorhandlers[int(kwargs['code'])] = Item(kwargs)
+            self.errorhandlers[int(kwargs['code'])] = kwargs.copy()
 
     @staticmethod
     def _route_escape(val):
@@ -247,17 +236,18 @@ class App(Router):
         """Figure out which URL matches."""
         methods_allowed = []
         for route in self.routes:
-            match = re.match(route.pattern, request.path)
+            match = re.match(route['pattern'], request.path)
             if match:
-                if route.methods and request.method not in route.methods:
-                    methods_allowed.extend(route.methods)
+                methods = route.get('methods')
+                if methods and request.method not in methods:
+                    methods_allowed.extend(methods)
                     continue
-                return route, match.group(0), match.groupdict()
+                return route, match, match.groupdict()
         if methods_allowed:
             raise HttpError(405, headers={'Allow': ",".join(methods_allowed)})
         raise HttpError(404)
 
-    ### Request Handling ###
+    ### Request Handling ###########################################
     def __call__(self, environ, start_response):
         """WSGI entrypoint."""
         resp = self.request_handler(Request(environ))
@@ -270,14 +260,14 @@ class App(Router):
 
     def _route_request(self, request, response):
         """Route and handle request (can raise HttpErrors)."""
-        route, matched, url_args = self._lookup_route(request)
+        route, match, url_args = self._lookup_route(request)
         request.vars.update(url_args)
-        if route.vars:
-            request.vars.update(route.vars)
-        request.route_path = matched
-        if route.response_class:
-            response = route.response_class()
-        return route.handler(request, response)
+        if route.get('vars'):
+            request.vars.update(route['vars'])
+        request._route_match = match
+        if route.get('response_class'):
+            response = route['response_class']()
+        return route['handler'](request, response)
 
     def _get_response_handled(self, fn, request, response):
         """Try/catch on a response fetcher, call error handler."""
@@ -297,17 +287,15 @@ class App(Router):
         """Sort out the response/result ambiguity, and return the response."""
         result = fn(request, response)
         if result:
-            if isinstance(result, Response):
-                response = result
-            else:
-                response.write(result)
+            if isinstance(result, Response): response = result
+            else: response.write(result)
         return response
 
     def error_handler(self, request, http_error):
         """Top-level error handler. Override to incercept every error."""
         route = self.errorhandlers.get(int(http_error.code))
         if route:
-            return route.handler(request, http_error)
+            return route['handler'](request, http_error)
         return self._default_error_handler(request, http_error)
 
     def _default_error_handler(self, request, http_error):
