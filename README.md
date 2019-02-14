@@ -9,10 +9,10 @@ of only about 300 lines of code.
 
 The intended use case is building minimal, self-contained web application
 servers. The framework is designed to make it perfectly reasonable to just
-paste the contents of tiny.py into your own code, and ship a single small
+paste the contents of tinyaf.py into your own code, and ship a single small
 file as your entire application.
 
-Because copy-paste deployment is the primary expected use case, tiny.py
+Because copy-paste deployment is the primary expected use case, tinyaf.py
 is highly optimized for code size. Each potential feature is balanced against
 the space required to code that feature. But the design is also intended to
 capture all the most important framework expectations, so that you don't
@@ -39,14 +39,14 @@ you see here.
 
 ## Fine then. How do I use it?
 
-Here's a complete (though pointless) example. But it's as easy to use as the
+Here's a complete (though pointless) example. It's as easy to use as the
 examples you see touted with all the other web frameworks. So given our
 absurdly tight constraints, I'd call that a win.
 
 ```python
-import tiny  # obviously you can just paste tiny.py here instead.
+import tinyaf  # obviously you can just paste tinyaf.py here instead.
 
-app = tiny.App()
+app = tinyaf.App()
 @app.route("/")
 def home(request, response):
   return "Hello world"
@@ -54,14 +54,14 @@ def home(request, response):
 @app.route("/static/<filename>")
 def static(request, response):
   try:
-    return tiny.FileResponse("./" + request['filename'])
+    return tinyaf.FileResponse("./" + request['filename'])
   except OSError:
-    raise tiny.HttpError(404)
+    raise tinyaf.HttpError(404)
 
-@app.route("/api/<type>/<id:\d+>/list", response_class=tiny.JsonResponse)
+@app.route("/api/<type>/<id:\d+>/list", response_class=tinyaf.JsonResponse)
 def api_get(request, response):
   if not request.headers["api-key"] == "123":
-    raise tiny.HttpError(403)
+    raise tinyaf.HttpError(403)
   response.headers["generator"] = "tiny/api"
   return {"type": request['type'], "id": request["id"] }
 

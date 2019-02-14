@@ -6,7 +6,7 @@ import functools
 import urllib
 import io
 
-import tiny
+import tinyaf
 
 try:
     from urlparse import unquote  # PY3

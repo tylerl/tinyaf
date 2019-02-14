@@ -1,8 +1,8 @@
 import os
 
-from . import tiny
+from . import tinyaf
 
-app = tiny.App()
+app = tinyaf.App()
 
 
 @app.route(r'/')
@@ -22,7 +22,7 @@ def crashy(req, resp):
     raise Exception("BOOM")
 
 
-fh = tiny.Router()
+fh = tinyaf.Router()
 
 
 @fh.route("/")
@@ -35,11 +35,11 @@ def dirlist(req, resp):
 @fh.route(r'^/([^/.][^/]*)$')
 def files(req, resp):
     if not os.path.exists(req.args[0]):
-        raise tiny.HttpError(404)
-    return tiny.FileResponse(req.args[0])
+        raise tinyaf.HttpError(404)
+    return tinyaf.FileResponse(req.args[0])
 
 
-app.route("/files")(lambda a, b: tiny.Response('', 302, {'location': '/files/'}))
+app.route("/files")(lambda a, b: tinyaf.Response('', 302, {'location': '/files/'}))
 app.mount("/files/", fh)
 
 
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     run()
 
 ###################################################
-# SCRATCH
+# TODO: scratch; delete when irrelevant
 #################
 # if (isinstance(response.content, list) or
 #     isinstance(response.content, tuple) or

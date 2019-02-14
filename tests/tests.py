@@ -3,14 +3,13 @@ from __future__ import absolute_import
 import textwrap
 
 from . import testbase
-import tiny
+import tinyaf
 
-# pylint: disable=W1401
 
 class RouteTest(testbase.TinyAppTestBase):
     def test_exact_route(self):
         """Verify non-regex routes aren't regex or prefix matched."""
-        app = tiny.App()
+        app = tinyaf.App()
         app.route("/", handler=lambda req, resp: "A")
         app.route("/fo.", handler=lambda req, resp: "B")
         app.route("/bar", handler=lambda req, resp: "X")
@@ -23,7 +22,7 @@ class RouteTest(testbase.TinyAppTestBase):
 
     def test_fuzzy_route(self):
         """Test non-regex pattern matching."""
-        app = tiny.App()
+        app = tinyaf.App()
         app.route("/", handler=lambda req, resp: "A")
         app.route("/*/bar", handler=lambda req, resp: "B")
         app.route("/foo/*/baz", handler=lambda req, resp: "C")
@@ -37,7 +36,7 @@ class RouteTest(testbase.TinyAppTestBase):
 
     def test_regex_route(self):
         """Verify regex routes are regex matched."""
-        app = tiny.App()
+        app = tinyaf.App()
         app.route(r"^/$", handler=lambda req, resp: "A")
         app.route(r"^/fo.$", handler=lambda req, resp: "B")
         app.route(r"^/bar", handler=lambda req, resp: "pfx")
@@ -49,14 +48,14 @@ class RouteTest(testbase.TinyAppTestBase):
 
     def test_error_handler(self):
         """Verify custom error handlers get called, even on implicit (404) Errors."""
-        app = tiny.App()
+        app = tinyaf.App()
         app.route(r"/", handler=lambda req, resp: "OK")
         app.errorhandler(404, handler=lambda req, resp: "NOT OK")
         app.errorhandler(567, handler=lambda req, resp: "OTHER")
 
         @app.route("/other")
         def _(i, o):
-            raise tiny.HttpError(567)
+            raise tinyaf.HttpError(567)
 
         self.assertProducesResponse(app, "/", 200, "OK")
         self.assertProducesResponse(app, "/foo", 404, "NOT OK")
@@ -64,7 +63,7 @@ class RouteTest(testbase.TinyAppTestBase):
 
     def test_method_miss(self):
         """Verify 405s error generated for method not found."""
-        app = tiny.App()
+        app = tinyaf.App()
         app.route(r"/", methods=['GET'], handler=lambda req, resp: "/@G")
         app.route(r"/", methods=['POST'], handler=lambda req, resp: "/@P")
         app.route(r"/gp", methods=['GET', 'POST'], handler=lambda req, resp: "/gp@GP")
@@ -90,11 +89,11 @@ class RouteTest(testbase.TinyAppTestBase):
 
     def test_separate_router(self):
         """Verify that external routers can be supplied to an app."""
-        r = tiny.Router()
+        r = tinyaf.Router()
         r.route("/", handler=lambda req, resp: "A")
         r.route(r"^/pf.x$", handler=lambda req, resp: "B")
         r.errorhandler(404, handler=lambda req, resp: "Z")
-        app = tiny.App(router=r)
+        app = tinyaf.App(router=r)
         self.assertProducesResponse(app, "/", 200, "A")
         self.assertProducesResponse(app, "/pf0x", 200, "B")
         self.assertProducesResponse(app, "/nofind", 404, "Z")
@@ -108,44 +107,44 @@ class RouteTest(testbase.TinyAppTestBase):
 
 class RequestTest(testbase.TinyAppTestBase):
     def test_url_vars(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
-        @app.route("/api/<ver:v\d+>/get/<kind>/<id:\d+>")
+        @app.route(r"/api/<ver:v\d+>/get/<kind>/<id:\d+>")
         def _(req, resp):
-            return tiny.JsonResponse(req.vars)
+            return tinyaf.JsonResponse(req.vars)
 
         self.assertProducesJson(app, "/api/v2/get/fish/37", dict(id='37', kind='fish', ver='v2'))
 
     def test_route_vars(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
-        @app.route("/api/<ver:v\d+>/get/<kind>/<id:\d+>", vars={'hello': 1, 'kind': 'other'})
+        @app.route(r"/api/<ver:v\d+>/get/<kind>/<id:\d+>", vars={'hello': 1, 'kind': 'other'})
         def _(req, resp):
-            return tiny.JsonResponse(req.vars)
+            return tinyaf.JsonResponse(req.vars)
 
         self.assertProducesJson(app, "/api/v2/get/fish/37",
                                 dict(hello=1, id='37', kind='other', ver='v2'))
 
     def test_brace_regex(self):
 
-        app = tiny.App()
-        @app.route("/foo/<bar:\d{3}-\d{4}>/baz")
+        app = tinyaf.App()
+        @app.route(r"/foo/<bar:\d{3}-\d{4}>/baz")
         def _(req, resp):
-            return tiny.JsonResponse(req.vars)
+            return tinyaf.JsonResponse(req.vars)
 
         self.assertProducesJson(app, "/foo/867-5309/baz", {"bar": "867-5309"})
 
 
     def test_fields_formurl(self):
-        app = tiny.App()
-        app.route("/", handler=lambda req, _: tiny.JsonResponse(req.fields))
+        app = tinyaf.App()
+        app.route("/", handler=lambda req, _: tinyaf.JsonResponse(req.fields))
         env = dict(CONTENT_TYPE="application/x-www-form-urlencoded")
         data = "foo=bar&baz=2"
         self.assertProducesJson(app, "/", dict(foo="bar", baz="2"), env=env, postdata=data)
 
     def test_fields_formdata(self):
-        app = tiny.App()
-        app.route("/", handler=lambda req, _: tiny.JsonResponse(req.fields))
+        app = tinyaf.App()
+        app.route("/", handler=lambda req, _: tinyaf.JsonResponse(req.fields))
         env = dict(CONTENT_TYPE="multipart/form-data; boundary=XyZ")
         data = textwrap.dedent("""
             --XyZ
@@ -161,32 +160,32 @@ class RequestTest(testbase.TinyAppTestBase):
         self.assertProducesJson(app, "/", dict(hello='world', foo='42'), env=env, postdata=data)
 
     def test_fields_querystring(self):
-        app = tiny.App()
-        app.route("/", handler=lambda req, _: tiny.JsonResponse(req.fields))
+        app = tinyaf.App()
+        app.route("/", handler=lambda req, _: tinyaf.JsonResponse(req.fields))
         env = dict(QUERY_STRING='hello=world&foo=42')
         self.assertProducesJson(app, "/", dict(hello='world', foo='42'), env=env)
 
     def test_headers(self):
-        app = tiny.App()
-        app.route("/", handler=lambda req, _: tiny.JsonResponse(dict(req.headers)))
+        app = tinyaf.App()
+        app.route("/", handler=lambda req, _: tinyaf.JsonResponse(dict(req.headers)))
         o = { "Accept-Language": "en-US", "Connection": "close" }
         env = dict(HTTP_ACCEPT_LANGUAGE='en-US', HTTP_CONNECTION='close')
         self.assertProducesJson(app, "/", obj=o, fuzzy=True, env=env)
 
     def test_reqvars(self):
-        app = tiny.App()
+        app = tinyaf.App()
         app.route(r"^.*",
-            handler=lambda req, _: tiny.JsonResponse(dict(method=req.method, path=req.path)))
+            handler=lambda req, _: tinyaf.JsonResponse(dict(method=req.method, path=req.path)))
         self.assertProducesJson(app, "/foo/bar?baz", dict(method="GET", path="/foo/bar"))
 
 
 class ResponseTest(testbase.TinyAppTestBase):
     def test_write(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         @app.route("/")
         def _(_resp, _req):
-            resp = tiny.Response()
+            resp = tinyaf.Response()
             resp.write("hello".encode('utf-8'))
             resp.write(" world".encode('utf-8'))
             return resp
@@ -194,25 +193,25 @@ class ResponseTest(testbase.TinyAppTestBase):
         self.assertProducesResponse(app, "/", 200, "hello world")
 
     def test_contents_array(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         @app.route("/")
         def _(_resp, _req):
-            return tiny.Response(content=["hello world".encode("utf-8")])
+            return tinyaf.Response(content=["hello world".encode("utf-8")])
 
         self.assertProducesResponse(app, "/", 200, "hello world")
 
     def test_contents_iter(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         @app.route("/")
         def _(_resp, _req):
-            return tiny.Response(content=(x.encode('utf-8') for x in "hello again world".split()))
+            return tinyaf.Response(content=(x.encode('utf-8') for x in "hello again world".split()))
 
         self.assertProducesResponse(app, "/", 200, "helloagainworld")
 
     def test_default_headers(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         @app.route("/")
         def _(req, resp):
@@ -230,16 +229,16 @@ class ResponseTest(testbase.TinyAppTestBase):
 
 class HandlingTest(testbase.TinyAppTestBase):
     def test_http_error(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         @app.route("/err")
         def _(i, o):
-            raise tiny.HttpError(567)
+            raise tinyaf.HttpError(567)
 
         self.assertProducesResponse(app, "/err", 567)
 
     def test_classic_exception(self):
-        app = tiny.App()
+        app = tinyaf.App()
         app.tracebacks_to_stderr = False
 
         @app.route("/err")
@@ -250,7 +249,7 @@ class HandlingTest(testbase.TinyAppTestBase):
 
     def test_classic_traceback_display(self):
         SENTINEL = "kTEHKdaRnkRSTf3upf4M"
-        app = tiny.App()
+        app = tinyaf.App()
         app.tracebacks_to_stderr = False
 
         @app.route("/err")
@@ -268,7 +267,7 @@ class HandlingTest(testbase.TinyAppTestBase):
 
 class RequestForwardTest(testbase.TinyAppTestBase):
     def test_wsgi_forward(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         def wsgi_app(environ, start_response):
             start_response("200 OK", [("content-type", "text/plain"), ("App2", "OK")])
@@ -285,8 +284,8 @@ class RequestForwardTest(testbase.TinyAppTestBase):
         self.assertResponseHeaders(resp, {"App1": "OK", "App2": "OK"})
 
     def test_app_forward(self):
-        app1 = tiny.App()
-        app2 = tiny.App()
+        app1 = tinyaf.App()
+        app2 = tinyaf.App()
 
         @app1.route("/")
         def _1(req, resp):
@@ -306,18 +305,18 @@ class RequestForwardTest(testbase.TinyAppTestBase):
 
 class JsonTest(testbase.TinyAppTestBase):
     def test_json_details(self):
-        app = tiny.App()
+        app = tinyaf.App()
 
         @app.route("/")
         def _(req, resp):
-            return tiny.JsonResponse({"hello": "world"})
+            return tinyaf.JsonResponse({"hello": "world"})
 
         resp = self.assertProducesJson(app, "/", {"hello": "world"})
         self.assertResponseHeaders(resp, {"content-type": "application/json; charset=utf-8"})
 
     def test_json_resp(self):
-        app = tiny.App()
-        app.response_class = tiny.JsonResponse
+        app = tinyaf.App()
+        app.response_class = tinyaf.JsonResponse
 
         @app.route("/")
         def _(req, resp):
@@ -328,8 +327,8 @@ class JsonTest(testbase.TinyAppTestBase):
         self.assertResponseHeaders(resp, {"Foo": "Bar"})
 
     def test_json_return(self):
-        app = tiny.App()
-        app.response_class = tiny.JsonResponse
+        app = tinyaf.App()
+        app.response_class = tinyaf.JsonResponse
 
         @app.route("/")
         def _(req, resp):

@@ -1,13 +1,32 @@
 """TinyAF is an exceptionally small Web Application Framework for Python WSGI."""
 
-# _tiny_doc.py contains the docstrings from tiny.py, allowing us to spluge on
-# exhaustive documentation for when we need it, without dropping a massive
+# _tinyaf_doc.py contains the docstrings from tinyaf.py, allowing us to spluge on
+# truly exhaustive documentation for when we need it, without dropping a massive
 # amount of content into everyone's copy-paste template.
 
-# pylint: disable=W1401
 
 class Router(object):
-    """Manage routes and error handlers in your application."""
+    """Manage routes and error handlers in your application.
+    
+    Router is a separate class so that if you prefer to paste the tinyaf code at
+    the end of your file, only the Router needs to be defined up top if you want
+    to define your handlers using decorators.
+
+    It'd look something like this:
+        # <paste Router class def here>
+
+        # your handler code       
+        router = Router()
+        @router.route("/")
+        def home():
+            pass
+        
+        # <paste the rest of tinyaf.py here>
+
+        # Set up your application and serve
+        App(router).serve_forever()
+    """
+    
     def route(self, path, handler=None, methods=None, response_class=None, vars=None, **kwargs):
         r"""Assign a handler function to a URL.
 
@@ -54,7 +73,8 @@ class Router(object):
                 your request vars dict under the key named "foo".
 
                 Example: "/hello/<adj>/world" matches the URL "/hello/friendly/world",
-                and the vars dict contains {"adj": "friendly"}.
+                and in the request argument passed to the hander, the vars dict is
+                set as `request.vars["adj"] = "friendly"`.
 
                 In technical terms, "<([0-9A-Za-z.]+)>" becomes "(?P<\1>[^/]+)"
 
@@ -78,7 +98,7 @@ class Router(object):
             If your pattern starts with "^", then it's treated as a raw regex, and
             matched as-is, with no second guessing or attempts at preventing you
             from shooting yourself in the foot. Any named capture groups in your pattern
-            will result in their matches getting stored into the request's "vars"
+            will result in their matches getting stored into the request's `vars`
             dictionary under the key named in your capture group. Regexes are matched
             using Python's re library. Named capture groups in Python regexes use the
             syntax "(?P<name>pattern)". Regex patterns are NOT anchored at the end
@@ -87,11 +107,11 @@ class Router(object):
             For example, the pattern "^/[^/]+/world.txt" will match the URL
             "/hello/world.txt...plus/some/trash", because there's no trailing anchor.
             You'd probably want the pattern "^/[^/]+/world.txt$" instead, which will
-            only match patterns like "/hello/world.txt" and "/howdy/world.txt".
+            match "/hello/world.txt" but not "/he/llo/world.txt".
 
         * Leading Slashes.
 
-            Due to a quirk of HTTP, all URLs start with "/". All of them. This means
+            Due to a quirk of HTTP, all URL paths start with "/". All of them. This means
             that patterns that don't have a leading "/" will never match anything.
             The Standard pattern engine will helpfully prepend a "/" to every pattern
             that doesn't have one. So the pattern "hello/world" gets turned into

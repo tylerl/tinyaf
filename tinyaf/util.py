@@ -1,9 +1,8 @@
-import html
 import pprint
 
-from . import tiny
+from . import tinyaf
 
-app = tiny.App()
+app = tinyaf.App()
 
 
 @app.route("/dump.{fmt:(txt|json)}")
@@ -19,7 +18,7 @@ def dump_request(req, resp):
 
     fmt = req.kwargs.get('fmt', 'txt')
     if fmt == 'json':
-        return tiny.JsonResponse(out)
+        return tinyaf.JsonResponse(out)
 
     if fmt == 'txt':
         resp.content_type = 'text/plain'
