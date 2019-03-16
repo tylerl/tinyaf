@@ -7,26 +7,26 @@
 
 class Router(object):
     """Manage routes and error handlers in your application.
-    
+
     Router is a separate class so that if you prefer to paste the tinyaf code at
     the end of your file, only the Router needs to be defined up top if you want
     to define your handlers using decorators.
 
-    It'd look something like this:
+    It would look something like this:
         # <paste Router class def here>
 
-        # your handler code       
+        # your handler code
         router = Router()
         @router.route("/")
         def home():
             pass
-        
+
         # <paste the rest of tinyaf.py here>
 
         # Set up your application and serve
         App(router).serve_forever()
     """
-    
+
     def route(self, path, handler=None, methods=None, response_class=None, vars=None, **kwargs):
         r"""Assign a handler function to a URL.
 
@@ -141,7 +141,7 @@ class Router(object):
         If your handler is triggered by an exception (other than just HttpError),
         then error.exception will contain the original exception and error.traceback
         will contain the traceback text.
-        
+
         If your handler returns a new Response object, then the provided one
         (the HttpError object) will be discarded. Otherwise any content you return
         will be appended using error.write(...).
@@ -149,8 +149,54 @@ class Router(object):
 
 class Request(object):
     """Request encapsulates the HTTP request info sent to your handler."""
+    """xxx Request object contains all the information from the HTTP request."""
 
+    def forward(self, application, env=None):
+        """XXX"""
 
 class Response(object):
     """Response contains the status, headers, and content of an HTTP response.
     You return a Response object in your request handler. """
+
+    """Response objects manage translating your output to WSGI."""
+
+    def __init__(self, content=None, code=200, headers=None, **kwargs):
+        """XXX"""
+    def write(self, content):
+        """XXX"""
+    def finalize(self):
+        """XXX"""
+
+class StringResponse(Response):
+    """A StringResponse manages string-to-bytes encoding for you."""
+
+class JsonResponse(StringResponse):
+    """A JsonResponse sends the provided val as JSON-encoded text."""
+
+class FileResponse(Response):
+    """A FileResponse sends raw files from your filesystem."""
+
+class HttpError(Exception, StringResponse):
+    """HttpError is a Response that you throw; it also invokes status handlers.
+
+    Arguments:
+        code: integer HTTP Status code
+        content: string content associated with StringResposne
+        kwargs: arguments associated with StringResponse
+    """
+
+class App(Router):
+
+    def request_handler(self, request):
+        """Top-level request handler."""
+
+    def error_handler(self, request, http_error):
+        """Top-level error handler. Override to incercept every error."""
+
+    def make_server(self, port=8080, host='', threaded=True):
+        """XXX"""
+
+    def serve_forever(self, port=8080, host='', threaded=True):
+        """XXX"""
+
+
