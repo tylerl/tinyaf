@@ -147,12 +147,25 @@ class Router(object):
         will be appended using error.write(...).
         """
 
+
 class Request(object):
-    """Request encapsulates the HTTP request info sent to your handler."""
-    """xxx Request object contains all the information from the HTTP request."""
+    """Request objects contain all the information from the HTTP request."""
 
     def forward(self, application, env=None):
-        """XXX"""
+        """Send this request to a WSGI application.
+
+        The application parameter must refer to a WSGI-compliant application. That
+        is, it must be callable, and its parameters, return value, and behavior
+        must be consistent with PEP 333 or PEP 3333.
+
+        Args:
+          application: WSGI-compliant object to send this request to.
+          env: dictionary with additional/replacement environment components to use. 
+
+        Return:
+          a Response object containing the result of the WSGI handler.
+        """
+
 
 class Response(object):
     """Response contains the status, headers, and content of an HTTP response.
@@ -162,19 +175,25 @@ class Response(object):
 
     def __init__(self, content=None, code=200, headers=None, **kwargs):
         """XXX"""
+
     def write(self, content):
         """XXX"""
+
     def finalize(self):
         """XXX"""
+
 
 class StringResponse(Response):
     """A StringResponse manages string-to-bytes encoding for you."""
 
+
 class JsonResponse(StringResponse):
     """A JsonResponse sends the provided val as JSON-encoded text."""
 
+
 class FileResponse(Response):
     """A FileResponse sends raw files from your filesystem."""
+
 
 class HttpError(Exception, StringResponse):
     """HttpError is a Response that you throw; it also invokes status handlers.
@@ -184,6 +203,7 @@ class HttpError(Exception, StringResponse):
         content: string content associated with StringResposne
         kwargs: arguments associated with StringResponse
     """
+
 
 class App(Router):
 
@@ -198,5 +218,3 @@ class App(Router):
 
     def serve_forever(self, port=8080, host='', threaded=True):
         """XXX"""
-
-
