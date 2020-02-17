@@ -1,6 +1,6 @@
 """TinyAF is an exceptionally small Web Application Framework for Python WSGI."""
 
-# _tinyaf_doc.py contains the docstrings from tinyaf.py, allowing us to spluge on
+# _tinyaf_doc.py contains in-depth docstrings from tinyaf.py, allowing for
 # truly exhaustive documentation for when we need it, without dropping a massive
 # amount of content into everyone's copy-paste template.
 
@@ -206,7 +206,6 @@ class HttpError(Exception, StringResponse):
 
 
 class App(Router):
-
     def request_handler(self, request):
         """Top-level request handler."""
 

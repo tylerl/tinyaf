@@ -338,6 +338,7 @@ class JsonTest(testbase.TinyAppTestBase):
 
 
 # TODO:
+# * nested error handling
 # * specific details of request forwarding,
 # * json response,
 # * file response,
