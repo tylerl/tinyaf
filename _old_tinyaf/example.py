@@ -39,7 +39,8 @@ def files(req, resp):
     return tinyaf.FileResponse(req.args[0])
 
 
-app.route("/files")(lambda a, b: tinyaf.Response('', 302, {'location': '/files/'}))
+app.route("/files")(lambda a, b: tinyaf.Response('',
+                                                 302, {'location': '/files/'}))
 app.mount("/files/", fh)
 
 

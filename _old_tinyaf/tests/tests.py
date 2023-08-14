@@ -1,9 +1,9 @@
 from __future__ import absolute_import
 
 import textwrap
+import tinyaf
 
 from . import testbase
-import tinyaf
 
 
 class RouteTest(testbase.TinyAppTestBase):
@@ -185,7 +185,7 @@ class ResponseTest(testbase.TinyAppTestBase):
 
         @app.route("/")
         def _(_resp, _req):
-            resp = tinyaf.Response()
+            resp = tinyaf.WritableResponse()
             resp.write("hello".encode('utf-8'))
             resp.write(" world".encode('utf-8'))
             return resp
@@ -319,9 +319,9 @@ class JsonTest(testbase.TinyAppTestBase):
         app.response_class = tinyaf.JsonResponse
 
         @app.route("/")
-        def _(req, resp):
+        def _(req, resp:tinyaf.JsonResponse):
             resp.headers['Foo'] = "Bar"
-            resp.val = {"hello": "world"}
+            resp.set_content({"hello": "world"})
 
         resp = self.assertProducesJson(app, "/", {"hello": "world"})
         self.assertResponseHeaders(resp, {"Foo": "Bar"})

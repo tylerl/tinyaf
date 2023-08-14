@@ -1,0 +1,12 @@
+#: schema = "https://json.schemastore.org/pyproject.json"
+
+# [build-system]
+# requires = ["setuptools>=64.0", "wheel>=0.37.1"]
+# build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinyaf"
+description = "Tiny Web Application Framework. Exactly as simple as practical."
+
+[tool.pytest.ini_options]
+pythonpath = "src"
