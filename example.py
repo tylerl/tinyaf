@@ -14,12 +14,12 @@ class CrazyResponse(tinyaf.StringResponse):
 resp: tinyaf.Response = CrazyResponse()
 
 
-app.route("/")
-def home(request: tinyaf.Request, response: tinyaf.JsonResponse) ->str:
+@app.route("/")
+def home(request: tinyaf.Request, response: tinyaf.JsonResponse):
     #response.set_content("Hello")
     #return response
     #return object()
-    return "Hello World"
+    return ["Hello World"]
 
 def main():
     """Program entry point."""

@@ -1,7 +1,6 @@
 
 import wsgiref.types
 import wsgiref.simple_server
-# import cgi
 import contextlib
 from dataclasses import InitVar, dataclass, field
 import wsgiref.headers
@@ -21,7 +20,7 @@ _T = t.TypeVar("_T")
 Headers = wsgiref.headers.Headers
 _AnyHeaders: t.TypeAlias = dict[str, str] | list[tuple[str, str]] | Headers
 _Wrapper = t.Callable[[_T], _T]
-_ResponseT = t.TypeVar("_ResponseT", bound="Response")
+_ResponseT = t.TypeVar("_ResponseT", bound="Response", covariant=True)
 
 
 class HandlerFn(t.Protocol):
@@ -37,7 +36,7 @@ class Handler(t.Protocol):
 AnyHandler = HandlerFn | Handler
 
 
-class DataclassDefaultOverridable:
+class DataclassDefaultOverridable:  # subclass can override field defaults
     def __init_subclass__(cls, **kwargs) -> None:
         if dc_fields := getattr(cls, "__dataclass_fields__", None):
             for k, v in (cls.__dict__ | kwargs).items():
@@ -117,6 +116,17 @@ class Request:
     # fields: dict[str, t.Any]
     http_errors: tuple[HttpError, ...] = field(default_factory=tuple)
 
+    # def _filebytes(self):
+    #     pass
+
+    # def _parse_fields(self, content_type, fp):
+    #     # TODO: parsing out fields manually instead of using cgi module
+    #     ct, args = util.parse_header_options(content_type, lower=True)
+    #     if ct == "multipart/form-data":
+    #         return _parse_multipart(fp)
+    #     elif ct == 'application/x-www-form-urlencoded':
+    #         return _parse_urlencoded(fp)
+
     @classmethod
     def from_wsgi(cls, environ: wsgiref.types.WSGIEnvironment):
         # fs = cgi.FieldStorage(
@@ -151,8 +161,22 @@ class Request:
         return self.route_match.match.groupdict()
 
     @property
+    def content_type(self) -> tuple[str, dict[str,str]]:
+        return util.parse_header_options(self.headers.get('Content-Type',''))
+
+    @property
     def post_vars(self):
-        """TODO: make this.""" # <------- IM HERE
+        if self.method != "POST":
+            return {}
+        # XXX: Here
+        # ct, vars = self.content_type
+        # ct = ct.lower()
+        # vars = {k.lower():v for k,v in vars.items()}
+        # if ct == "multipart/form-data":
+        #     return _parse_multipart(body)
+        # elif ct == 'application/x-www-form-urlencoded':
+        #     dict(urllib.parse.parse_qsl(body))
+        return {}
 
     @property
     def vars(self):
@@ -166,7 +190,6 @@ class Request:
             match = t.cast(re.Match[str], re.match("/", "/"))
             cls._empty_match_inst = RouteMatch(Route("/"), match)
             return cls._empty_match_inst
-
 
 @dataclass(kw_only=True)
 class Response:

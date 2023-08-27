@@ -7,6 +7,7 @@
 [project]
 name = "tinyaf"
 description = "Tiny Web Application Framework. Exactly as simple as practical."
+version = "0.1"
 
 [tool.pytest.ini_options]
 pythonpath = "src"
