@@ -12,5 +12,6 @@
 				"ms-python.autopep8"
 			]
 		}
-	}
+	},
+	"postCreateCommand": ".devcontainer.json/post-create.sh"
 }
