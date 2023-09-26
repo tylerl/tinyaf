@@ -11,6 +11,7 @@ import html
 import socketserver
 import copy
 import urllib.parse
+import io
 
 from . import util
 
@@ -21,7 +22,6 @@ Headers = wsgiref.headers.Headers
 _AnyHeaders: t.TypeAlias = dict[str, str] | list[tuple[str, str]] | Headers
 _Wrapper = t.Callable[[_T], _T]
 _ResponseT = t.TypeVar("_ResponseT", bound="Response", covariant=True)
-
 
 class HandlerFn(t.Protocol):
     def __call__(self, request: "Request", response: _ResponseT,  # type: ignore
@@ -86,7 +86,7 @@ class HttpError(Exception, DataclassDefaultOverridable):
 @dataclass(kw_only=True)
 class MethodNotAllowed(HttpError):
     code = 405
-    allow: tuple[str] = field(default_factory=tuple)
+    allow: tuple[str,...] = field(default_factory=tuple)
 
     def default_headers(self):
         return {"Allow": ",".join(self.allow)}
@@ -112,6 +112,7 @@ class Request:
     method: str
     headers: Headers
     route_match: RouteMatch
+
     # fieldstorage: cgi.FieldStorage  # TODO: cgi is deprecated and will be removed
     # fields: dict[str, t.Any]
     http_errors: tuple[HttpError, ...] = field(default_factory=tuple)
@@ -164,19 +165,25 @@ class Request:
     def content_type(self) -> tuple[str, dict[str,str]]:
         return util.parse_header_options(self.headers.get('Content-Type',''))
 
+    def _body_fp(self) -> t.Iterable[bytes]:
+        return self.environ.get('wsgi.input', (b"",))
+
+    def body_bytes(self) ->bytes:
+        return b''.join(self._body_fp())
+
     @property
     def post_vars(self):
         if self.method != "POST":
             return {}
-        # XXX: Here
-        # ct, vars = self.content_type
-        # ct = ct.lower()
-        # vars = {k.lower():v for k,v in vars.items()}
-        # if ct == "multipart/form-data":
-        #     return _parse_multipart(body)
-        # elif ct == 'application/x-www-form-urlencoded':
-        #     dict(urllib.parse.parse_qsl(body))
-        return {}
+        ct, vars = self.content_type
+        ct = ct.lower()
+        vars = {k.lower():v for k,v in vars.items()}
+        if ct[10:] == "multipart/":
+            return _parse_multipart(self.body_bytes())
+        elif ct == 'application/x-www-form-urlencoded':
+            encoding = vars.get('content-encoding', 'latin1')
+            dict(urllib.parse.parse_qsl(self.body_bytes(), encoding=encoding))
+        return []
 
     @property
     def vars(self):

@@ -4,7 +4,6 @@ import inspect
 import typing as t
 import itertools
 import codecs
-import cgi
 
 from urllib.request import parse_http_list as _parse_list_header
 
@@ -78,3 +77,6 @@ def parse_header_dict(val:str):
 def parse_header_options(val:str):
     first, _, rest = val.partition(';')
     return first.strip(), parse_header_dict(rest)
+
+def parse_multipart():
+    pass`
