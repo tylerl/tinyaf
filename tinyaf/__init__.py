@@ -30,30 +30,39 @@ import sys
 # import tinyaf (rather than tinyaf.tinyaf) into Python, then you'll end up with
 # the full docs in your help text and whatnot.
 
+# This was a good idea a the time, back when tools actually imported your Python
+# code instead of just parsing it. Now it's not a terrifically useful concept
+# and just causes headaches. This technique will soon be replaced.
+
 # Copy all the docstrings from tinyaf_doc into tinyaf
+
+
 def _copy_docs(a, b):
-  for name in (x for x in dir(a) if x[0] != "_"):
-    try:
-      a1, b1 = getattr(a, name), getattr(b, name)
-    except AttributeError:
-      continue
-    if type(a1) == type(b1) and type(a1) in (types.FunctionType, type):
-      if hasattr(a1, '__doc__'):
+    for name in (x for x in dir(a) if x[0] != "_"):
         try:
-          b1.__doc__ = a1.__doc__
+            a1, b1 = getattr(a, name), getattr(b, name)
         except AttributeError:
-          # Py2 doesn't allow assigning docstrings for Classes/types
-          pass
-      _copy_docs(a1, b1)
+            continue
+        if type(a1) == type(b1) and type(a1) in (types.FunctionType, type):
+            if hasattr(a1, '__doc__'):
+                try:
+                    b1.__doc__ = a1.__doc__
+                except AttributeError:
+                    # Py2 doesn't allow assigning docstrings for Classes/types
+                    pass
+            _copy_docs(a1, b1)
 
 # Essentially, `from .tinyaf import *` and set __all__ accordingly.
+
+
 def _exportall(from_mod, to_mod):
-  """Copy the target namespace into the current one."""
-  to_mod.__all__ = []
-  for k in dir(from_mod):
-    if not k.startswith('_'):
-      setattr(to_mod, k, getattr(from_mod, k))
-      to_mod.__all__.append(k)
+    """Copy the target namespace into the current one."""
+    to_mod.__all__ = []
+    for k in dir(from_mod):
+        if not k.startswith('_'):
+            setattr(to_mod, k, getattr(from_mod, k))
+            to_mod.__all__.append(k)
+
 
 _copy_docs(_tinyaf_doc, _tinyaf)
 _exportall(_tinyaf, sys.modules[__name__])

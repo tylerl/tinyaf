@@ -1,20 +1,20 @@
 import os
 
-from . import tinyaf
+import tinyaf
 
 app = tinyaf.App()
 
 
 @app.route(r'/')
-def home(req, resp):
+def home(request, response):
     return "<html><h1>Hello World</h1></html>"
 
 
-@app.route(r'^/sleep/(\d+)$')
-def sleepy_dave(req, resp):
+@app.route('/sleep/<seconds:\d>')
+def sleepy_dave(request, response):
     import time
-    time.sleep(int(req.args[0]))
-    return "Slept %i sec" % (int(req.args[0]))
+    time.sleep(int(request['seconds']))
+    return "Slept %i sec" % (int(request['seconds']))
 
 
 @app.route(r'/crash')
@@ -22,25 +22,28 @@ def crashy(req, resp):
     raise Exception("BOOM")
 
 
-fh = tinyaf.Router()
+def forward(location, code=301):
+    def handler(request, response):
+        r = tinyaf.StringResponse()
+        return tinyaf.Response('', code, {'location': location})
+    return handler
 
 
-@fh.route("/")
-def dirlist(req, resp):
+app.route("/files")(forward('/files/', 302))
+
+
+@app.route("/files/")
+def dirlist(request, response):
     for f in os.listdir():
         if not f.startswith(".") and os.path.isfile(f):
-            resp.append("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
+            response.write("<a href=\"{0}\">{0}<a/><br/>\n".format(f))
 
 
-@fh.route(r'^/([^/.][^/]*)$')
+@app.route('/files/<name>')
 def files(req, resp):
-    if not os.path.exists(req.args[0]):
+    if not os.path.exists(req['name']):
         raise tinyaf.HttpError(404)
-    return tinyaf.FileResponse(req.args[0])
-
-
-app.route("/files")(lambda a, b: tinyaf.Response('', 302, {'location': '/files/'}))
-app.mount("/files/", fh)
+    return tinyaf.FileResponse(req['name'])
 
 
 def run():
@@ -55,16 +58,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-
-###################################################
-# TODO: scratch; delete when irrelevant
-#################
-# if (isinstance(response.content, list) or
-#     isinstance(response.content, tuple) or
-#     isinstance(response.content, types.GeneratorType)):
-#   content = response.content
-# else:
-#   content = [response.content]
-# if not response.binary:  # auto-encode unicode
-#   content = (
-#       s.encode("utf-8") if isinstance(s, type(u'')) else s for s in content)

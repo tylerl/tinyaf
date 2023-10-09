@@ -4,6 +4,9 @@
 # truly exhaustive documentation for when we need it, without dropping a massive
 # amount of content into everyone's copy-paste template.
 
+# This was a good idea a the time, back when tools actually imported your Python
+# code instead of just parsing it. Now it's not a terrifically useful concept
+# and just causes headaches. This technique will soon be replaced.
 
 class Router(object):
     """Manage routes and error handlers in your application.
@@ -160,7 +163,7 @@ class Request(object):
 
         Args:
           application: WSGI-compliant object to send this request to.
-          env: dictionary with additional/replacement environment components to use. 
+          env: dictionary with additional/replacement environment components to use.
 
         Return:
           a Response object containing the result of the WSGI handler.

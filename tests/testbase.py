@@ -9,9 +9,9 @@ import io
 import tinyaf
 
 try:
-    from urlparse import unquote  # PY3
+    from urlparse import unquote  # PY2
 except ImportError:
-    from urllib.parse import unquote  # PY2
+    from urllib.parse import unquote  # PY3
 
 if sys.version_info[0] == 2:  # PY2
     BYTE_TYPE = str
@@ -39,7 +39,6 @@ BASE_ENV = {
 
 class RequestFailure(AssertionError):
     """Something went wrong with the WSGI protocol interaction."""
-
 
 class Request(object):
     def __init__(self, path, postdata=None, method=None, env=None):

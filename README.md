@@ -1,4 +1,10 @@
-# Tiny App Framework
+> _NOTE: A rewrite of this library is currently in progress. The original
+  TinyAF was built long before type annotations were a thing, and back
+  when Python 2/3 compatibility mattered. The new version fully embraces
+  typing and aims to make ease-of-use and legibility a greater priority
+  at the expense of having more lines of code._
+
+# Tiny App Framework  (TinyAF)
 
 TinyAF is an _exceptionally_ small Web Application Framework for Python WSGI.
 
@@ -54,7 +60,7 @@ def home(request, response):
 @app.route("/static/<filename>")
 def static(request, response):
   try:
-    return tinyaf.FileResponse("./" + request['filename'])
+    return tinyaf.FileResponse(request['filename'])
   except OSError:
     raise tinyaf.HttpError(404)
 
